@@ -197,6 +197,10 @@ jobs:
 
       # ─── Package ───
 
+      - name: Create staging directory
+        shell: bash
+        run: mkdir -p staging
+
       - name: Stage executable (Windows)
         if: runner.os == 'Windows'
         shell: bash
