@@ -1,136 +1,108 @@
-<p align="center">
-  <img src="frontend/icon.png" alt="GitInstaller" width="120" />
-</p>
+<div align="center">
 
-<h1 align="center">GitInstaller</h1>
+<img src="https://raw.githubusercontent.com/arjun-arihant/gitinstaller/main/frontend/icon.png" width="100" />
 
-<p align="center">
-  <strong>Paste a GitHub URL → get a working, launchable local install — zero terminal knowledge required.</strong>
-</p>
+# GitInstaller
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status" />
-  <img src="https://img.shields.io/badge/Python-3.10%2B-blue" alt="Python" />
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform" />
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
-</p>
+**The easiest way to run AI-generated web interfaces for any open-source project.**
+
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Build & Release](https://github.com/arjun-arihant/gitinstaller/actions/workflows/build.yml/badge.svg)](https://github.com/arjun-arihant/gitinstaller/actions/workflows/build.yml)
+
+</div>
+
+GitInstaller bridges the gap between complex open-source repositories and non-technical users. It automatically clones repositories, analyzes their architecture using Claude AI, sets up necessary virtual environments, installs dependencies, and generates a fully functional **Gradio Web UI** tailored exactly to that project's specific needs.
+
+## 🚀 Quick Start
+
+Get running in less than 5 minutes.
+
+### 1. Download the App
+Download the latest standalone executable for your operating system (Windows, macOS, or Linux) from the [Releases page](https://github.com/arjun-arihant/gitinstaller/releases).
+
+### 2. Configure API Keys
+When you launch the app for the first time, you'll need to provide an **OpenRouter API Key** (for Claude 3.5 Sonnet analysis) and a **GitHub Personal Access Token** (for fetching private repositories and avoiding rate limits).
+
+### 3. Install a Project
+1. Paste a GitHub URL (e.g., `https://github.com/user/repo`).
+2. Click **Install to GitInstaller**.
+3. Review the AI-generated execution plan. You can edit, retry, or skip steps as needed.
+4. Click **Start Execution**. Grab a coffee while GitInstaller handles cloning, environments, and dependencies.
+5. Once complete, click **Launch WebUI** to interact with the project!
 
 ---
 
-GitInstaller is a desktop application that turns any GitHub repository into a one-click local install. It reads the repo's documentation, uses an LLM to generate an execution plan, and runs it — cloning, creating virtual environments, installing dependencies, and generating launchers — all without you touching a terminal.
+## ✨ Key Features
 
-## ✨ Features
+- **🧠 Auto-Generated Web UIs**: Uses Claude 3.5 Sonnet to understand undocumented repos and generate standard Python Gradio interfaces.
+- **⚡ Portable Architecture**: Create isolated virtual environments for every project. Optionally drop portable `python/`, `node/`, and `git/` folders into `bundled/` to avoid polluting your system.
+- **🎨 Universal Theming**: All generated Web UIs strictly follow the `data/design.md` visual guidelines for a cohesive, branded experience.
+- **🔄 Interactive Planning**: Review, modify, or cancel the AI's step-by-step installation plan before running it.
+- **🍎 Cross-Platform**: Natively runs on Windows, macOS, and Linux with full system tray integration.
+- **🔒 Private Repo Support**: Seamlessly clone and analyze private GitHub repositories.
 
-### Core
-- 🧠 **AI-Powered Plans** — Analyzes README/INSTALL docs via OpenRouter (MiMo-v2-flash) and generates step-by-step shell commands
-- 🔍 **Plan Review** — See every command before it runs. Approve, cancel, or go back
-- ⛔ **Cancel Anytime** — Abort a running installation and kill the entire process tree
-- 🔄 **Retry / Skip** — When a step fails, retry it or skip and continue with the rest
-- 🐍 **Sandboxed Environments** — Auto-creates Python venvs so nothing touches your system
-- 🎨 **Auto WebUI Generation** — Detects CLI/library tools and generates a Gradio interface with consistent theming via `data/design.md`
+---
 
-### UX
-- 🖼️ **Resizable Window** — Responsive layout, 960×700 default with 800×600 minimum
-- 🔗 **Smart Input** — Paste `owner/repo`, `github.com/owner/repo`, or a full URL
-- 🔍 **Search & Filter** — Find installed projects instantly
-- 🎯 **Drag & Drop** — Drop GitHub URLs directly into the app
-- ⌨️ **Keyboard Shortcuts** — `Escape` closes modals, `Ctrl+V` auto-focuses input
-- 🌓 **Dark / Light Theme** — Toggle with persistence across sessions
-- 📊 **Status Badges** — See ✅ Installed, ⚠️ Partial, or ❌ Failed at a glance
-- ⏱️ **Timestamps** — "3h ago", "5d ago" on every project card
+## 🛠 Developer Guide
 
-### Compatibility
-- 🖥️ **Cross-Platform** — Windows, macOS, and Linux support via `core/platform_utils.py`
-- 📦 **Node.js Support** — Detects `package.json`, runs `npm install`, generates proper launchers
-- 🔒 **Private Repos** — Add a GitHub Personal Access Token in Settings for private repository access
-- 💾 **Plan Caching** — Reuse previous AI plans without another API call
-- 📐 **Size Estimation** — See repo size before installing
+Are you an AI agent or a developer looking to contribute to GitInstaller? Here are the rules of the road.
 
-### System
-- 🖼️ **Custom App Icon** — Branded icon in title bar, taskbar, and system tray
-- 🔔 **System Tray** — Minimize to tray with Show/Quit controls
-- 🚀 **Auto-Launch WebUI** — Generated WebUIs open directly in your browser
+### Core Commands
 
-## 📁 Project Structure
+Make sure you have Python 3.11+ installed.
 
-```
-GitInstaller/
-├── app.py                  # Main entry point + API
-├── core/
-│   ├── claude_analyzer.py  # LLM plan generation
-│   ├── executor.py         # Step execution + process management
-│   ├── github_fetcher.py   # GitHub API + repo metadata
-│   ├── launcher_gen.py     # .bat/.sh launcher generation
-│   ├── platform_utils.py   # Cross-platform abstractions
-│   ├── project_manager.py  # Project storage + config
-│   └── webui_gen.py        # Gradio WebUI generation
-├── frontend/
-│   ├── index.html          # UI structure (6 screens)
-│   ├── style.css           # Responsive dark/light themes
-│   ├── app.js              # Frontend logic
-│   ├── icon.png            # App icon (PNG)
-│   └── icon.ico            # App icon (ICO for Windows)
-├── data/
-│   ├── design.md           # Gradio WebUI theme spec (swappable)
-│   ├── config.json         # App settings
-│   ├── projects.json       # Installed project registry
-│   └── plans/              # Cached AI plans
-├── bundled/
-│   ├── python/             # Optional portable Python
-│   ├── git/                # Optional portable Git
-│   └── node/               # Optional portable Node.js
-└── requirements.txt
+```bash
+# Clone the repository
+git clone https://github.com/arjun-arihant/gitinstaller.git
+cd gitinstaller
+
+# Create virtual environment and install dependencies
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run the application locally
+python app.py
 ```
 
-## 🚀 Installation & Setup
+### Type Checking & Linting
 
-1. **Clone:**
-   ```bash
-   git clone https://github.com/arjun-arihant/gitinstaller.git
-   cd gitinstaller
-   ```
+We enforce strict type checking across the codebase.
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# Run the pyright type checker (configured in pyrightconfig.json)
+pyright
+```
 
-3. **Configure API key:**
-   - Copy `.env.example` to `.env` and add your OpenRouter API key, **or**
-   - Set it in the app's Settings menu (⚙️ icon)
+### Building the Executables
 
-4. **Run:**
-   ```bash
-   python app.py
-   ```
+We use PyInstaller to build cross-platform binaries. This is fully automated via GitHub Actions on every tag push (see `.github/workflows/build.yml`). If you need to build locally, look at the exact pyinstaller flags used in the workflow file.
 
-## ⚙️ Configuration
+---
 
-All configuration is stored locally:
+## 🏗 Architecture & Patterns
 
-| Setting | Location | Description |
-|---------|----------|-------------|
-| OpenRouter API Key | `.env` or Settings | Required for AI plan generation |
-| GitHub Token | `.env` or Settings | Optional, for private repositories |
-| Theme | Settings toggle | Dark (default) or Light |
-| Install Path | Home screen | Where repos get installed |
+When modifying the codebase, adhere to these project-specific structural patterns (documented in `AGENTS.md`):
 
-## 📦 Bundled Runtimes (Optional)
+### Theming System
+- **`data/design.md`**: This is the drop-in replaceable design spec. All generated Gradio WebUIs pull their theme values from here. Swap this file out to instantly change the appearance of all future generated interfaces.
 
-For fully standalone operation without system dependencies:
+### State & Caching
+- **AI Plan Caching**: Project plans are cached in the `data/plans/` directory to save API costs. Delete a plan file to force re-analysis.
+- **App State Files**: User configurations and the installed project registry are stored locally in `data/config.json` and `data/projects.json` (these are `.gitignore`d).
 
-| Runtime | Drop into | Purpose |
-|---------|-----------|---------|
-| **Python** | `bundled/python/` | Isolated venv creation |
-| **Git** | `bundled/git/` | Cloning without system Git |
-| **Node.js** | `bundled/node/` | npm/npx for Node projects |
+### Runtimes
+- **Bundled Runtimes**: To make GitInstaller fully portable, you can place portable runtime binaries in `bundled/python/`, `bundled/git/`, and `bundled/node/`. The app will automatically prefer these over system PATH bins.
 
-> Bundled binaries are gitignored. Directory stubs are kept via `.gitkeep`.
+### Core Modules
+- **`app.py`**: The main entry point. Exposes a Python API to JavaScript via `pywebview`.
+- **`core/platform_utils.py`**: Handles cross-platform abstractions (OS detection, appropriate script generation `.bat` vs `.sh`, venv pathing).
+- **`core/executor.py`**: Manages subprocess execution. On Windows, it binds spawned child processes to job objects to ensure proper process tree termination.
+- **Custom Exceptions**: Always use the defined domain exceptions (e.g., `RepoNotFoundError`, `GitHubRateLimitError`) rather than generic exceptions.
 
-## 🎨 WebUI Theming
-
-All generated Gradio WebUIs follow `data/design.md` — a drop-in replaceable design spec that defines colors, fonts, spacing, and branding. Swap this file to change the look of every future generated WebUI.
+---
 
 ## 📄 License
 
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
