@@ -1,60 +1,100 @@
 """
-core/executor.py — Runs installation steps sequentially using subprocess
-Supports cancel (via threading.Event), retry from step, and skip steps.
-Cross-platform via platform_utils.
+core/executor.py — Runs installation steps sequentially using subprocess.
+
+Supports:
+- Cancel (via ``threading.Event``)
+- Retry from a specific step
+- Skip individual steps
+- Cross-platform execution via ``core.platform_utils``
+- Windows Job Objects for proper process tree termination
 """
 
+from __future__ import annotations
+
+import logging
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import threading
+from typing import Callable, Optional, Set
 
+from core.paths import get_app_dir, get_bundled_dir
 from core.platform_utils import (
-    is_windows, create_job_object, assign_to_job, close_job_object,
-    terminate_job_object, get_popen_kwargs, build_env, get_venv_scripts_dir
+    assign_to_job,
+    build_env,
+    close_job_object,
+    create_job_object,
+    get_popen_kwargs,
+    get_venv_scripts_dir,
+    is_windows,
 )
 
-
-def _get_app_dir():
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+logger = logging.getLogger(__name__)
 
 
-def _get_bundled_python():
-    app_dir = _get_app_dir()
+# ---------------------------------------------------------------------------
+# Bundled Runtime Discovery
+# ---------------------------------------------------------------------------
+
+def _get_bundled_python() -> str:
+    """Locate the bundled Python executable, falling back to system Python.
+
+    Returns:
+        Absolute path to a usable Python interpreter.
+
+    Raises:
+        RuntimeError: If no Python interpreter can be found in a frozen build.
+    """
+    bundled_dir = get_bundled_dir()
     if is_windows():
-        bundled = os.path.join(app_dir, "bundled", "python", "python.exe")
+        bundled = os.path.join(bundled_dir, "python", "python.exe")
     else:
-        bundled = os.path.join(app_dir, "bundled", "python", "bin", "python3")
+        bundled = os.path.join(bundled_dir, "python", "bin", "python3")
+
     if os.path.isfile(bundled):
         return bundled
-    print("[WARNING] Bundled Python not found, using system Python")
-    if getattr(sys, 'frozen', False):
+
+    logger.warning("Bundled Python not found at %s, using system Python", bundled)
+
+    if getattr(sys, "frozen", False):
         sys_python = shutil.which("python3") or shutil.which("python")
         if sys_python:
             return sys_python
-        raise RuntimeError("Bundled Python not found, and system Python not found in PATH!")
+        raise RuntimeError(
+            "Bundled Python not found, and system Python not found in PATH!"
+        )
     return sys.executable
 
 
-def _get_bundled_git_dir():
-    app_dir = _get_app_dir()
-    bundled = os.path.join(app_dir, "bundled", "git", "bin")
+def _get_bundled_git_dir() -> str:
+    """Locate the bundled Git ``bin/`` directory.
+
+    Returns:
+        Absolute path to the bundled Git bin directory, or empty string if not found.
+    """
+    bundled = os.path.join(get_bundled_dir(), "git", "bin")
     if os.path.isdir(bundled):
         return bundled
-    print("[WARNING] Bundled Git not found, using system Git")
+    logger.warning("Bundled Git not found at %s, using system Git", bundled)
     return ""
 
 
-def _get_bundled_node_dir():
-    """Locate bundled Node.js or fall back to system Node."""
-    app_dir = _get_app_dir()
+def _get_bundled_node_dir() -> str:
+    """Locate the bundled Node.js directory, falling back to system Node.
+
+    Returns:
+        Absolute path to a Node.js directory, or empty string if not found.
+    """
+    bundled_dir = get_bundled_dir()
     if is_windows():
-        bundled = os.path.join(app_dir, "bundled", "node")
+        bundled = os.path.join(bundled_dir, "node")
     else:
-        bundled = os.path.join(app_dir, "bundled", "node", "bin")
+        bundled = os.path.join(bundled_dir, "node", "bin")
+
     if os.path.isdir(bundled):
         return bundled
+
     # Fall back to system node
     node_path = shutil.which("node")
     if node_path:
@@ -62,9 +102,33 @@ def _get_bundled_node_dir():
     return ""
 
 
-def _run_single_command(command, cwd, env, job, on_output, cancel_event=None):
-    """Run a single shell command and stream output. Returns (returncode, output_lines)."""
-    output_lines = []
+# ---------------------------------------------------------------------------
+# Single Command Execution
+# ---------------------------------------------------------------------------
+
+def _run_single_command(
+    command: str,
+    cwd: str,
+    env: dict[str, str],
+    job: object | None,
+    on_output: Callable[[str], None],
+    cancel_event: Optional[threading.Event] = None,
+) -> tuple[int, list[str]]:
+    """Run a single shell command and stream output line by line.
+
+    Args:
+        command: The shell command string to execute.
+        cwd: Working directory for the command.
+        env: Environment variables dict.
+        job: Windows Job Object handle (or ``None``).
+        on_output: Callback invoked with each output line.
+        cancel_event: Optional event that, when set, cancels execution.
+
+    Returns:
+        A ``(returncode, output_lines)`` tuple. Return code ``-999`` indicates
+        cancellation.
+    """
+    output_lines: list[str] = []
 
     try:
         popen_kwargs = get_popen_kwargs()
@@ -82,12 +146,12 @@ def _run_single_command(command, cwd, env, job, on_output, cancel_event=None):
 
         if is_windows() and job:
             try:
-                handle = int(proc._handle)
+                handle = int(proc._handle)  # type: ignore[attr-defined]
                 assign_to_job(job, handle)
             except Exception:
-                pass
+                logger.debug("Failed to assign process to job object", exc_info=True)
 
-        for line in proc.stdout:
+        for line in proc.stdout:  # type: ignore[union-attr]
             if cancel_event and cancel_event.is_set():
                 from core.platform_utils import kill_process_tree
                 kill_process_tree(proc)
@@ -95,22 +159,35 @@ def _run_single_command(command, cwd, env, job, on_output, cancel_event=None):
 
             line = line.rstrip("\n").rstrip("\r")
             output_lines.append(line)
-            on_output(line + "\n")
+            on_output(f"{line}\n")
 
         proc.wait()
-        return proc.returncode, output_lines
+        return proc.returncode or 0, output_lines
 
-    except FileNotFoundError as e:
-        error_msg = f"Command not found: {e}"
-        on_output(error_msg + "\n")
+    except FileNotFoundError as exc:
+        error_msg = f"Command not found: {exc}"
+        on_output(f"{error_msg}\n")
         return 1, [error_msg]
-    except Exception as e:
-        error_msg = str(e)
-        on_output(error_msg + "\n")
+    except Exception as exc:
+        error_msg = str(exc)
+        on_output(f"{error_msg}\n")
         return 1, [error_msg]
 
 
-def _fix_git_clone_command(command, project_dir):
+# ---------------------------------------------------------------------------
+# Command Helpers
+# ---------------------------------------------------------------------------
+
+def _fix_git_clone_command(command: str, project_dir: str) -> str:
+    """Append the target directory to a ``git clone`` command if missing.
+
+    Args:
+        command: The raw git clone command string.
+        project_dir: The desired clone target directory.
+
+    Returns:
+        The command with the target directory appended.
+    """
     parts = command.strip().split()
     if "clone" in parts:
         clone_idx = parts.index("clone")
@@ -120,10 +197,21 @@ def _fix_git_clone_command(command, project_dir):
     return command
 
 
-def _split_chained_commands(command):
-    parts = []
-    current = []
-    in_quote = None
+def _split_chained_commands(command: str) -> list[str]:
+    """Split a ``&&``-chained command string into individual commands.
+
+    Respects quoted strings so that ``&&`` inside quotes is not treated as a
+    separator.
+
+    Args:
+        command: The potentially chained command string.
+
+    Returns:
+        A list of individual command strings.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    in_quote: str | None = None
     i = 0
     while i < len(command):
         ch = command[i]
@@ -133,7 +221,7 @@ def _split_chained_commands(command):
         elif ch == in_quote:
             in_quote = None
             current.append(ch)
-        elif ch == '&' and i + 1 < len(command) and command[i + 1] == '&' and in_quote is None:
+        elif ch == "&" and i + 1 < len(command) and command[i + 1] == "&" and in_quote is None:
             parts.append("".join(current).strip())
             current = []
             i += 2
@@ -147,18 +235,40 @@ def _split_chained_commands(command):
     return [p for p in parts if p]
 
 
-def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
-                  on_step_done, on_error, cancel_event=None,
-                  resume_from_step=None, skip_step_ids=None):
-    """
-    Execute the installation steps sequentially.
-    Returns True if all steps succeeded, False otherwise.
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-    cancel_event: threading.Event — set to cancel mid-install
-    resume_from_step: int — skip steps before this step id
-    skip_step_ids: set — step ids to skip entirely
+def execute_steps(
+    plan: dict,
+    project_dir: str,
+    clone_url: str,
+    on_output: Callable[[str], None],
+    on_step_start: Callable[[int, str], None],
+    on_step_done: Callable[[int, bool], None],
+    on_error: Callable[[int, str], None],
+    cancel_event: Optional[threading.Event] = None,
+    resume_from_step: Optional[int] = None,
+    skip_step_ids: Optional[Set[int]] = None,
+) -> bool:
+    """Execute installation steps sequentially.
+
+    Args:
+        plan: The installation plan dict (must contain a ``steps`` list).
+        project_dir: Absolute path to the target project directory.
+        clone_url: The git clone URL.
+        on_output: Callback for streaming terminal output lines.
+        on_step_start: Callback ``(step_id, description)`` when a step begins.
+        on_step_done: Callback ``(step_id, success)`` when a step completes.
+        on_error: Callback ``(step_id, error_message)`` when a step fails.
+        cancel_event: Optional event to signal cancellation.
+        resume_from_step: If set, skip all steps before this step id.
+        skip_step_ids: Set of step ids to skip entirely.
+
+    Returns:
+        ``True`` if all steps succeeded, ``False`` otherwise.
     """
-    steps = plan.get("steps", [])
+    steps: list[dict] = plan.get("steps", [])
     if not steps:
         on_output("No installation steps found in the plan.\n")
         return False
@@ -174,10 +284,10 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
     reached_resume_point = resume_from_step is None
 
     for step in steps:
-        step_id = step.get("id", 0)
-        step_type = step.get("type", "custom")
-        description = step.get("description", "Running command...")
-        command = step.get("command", "")
+        step_id: int = step.get("id", 0)
+        step_type: str = step.get("type", "custom")
+        description: str = step.get("description", "Running command...")
+        command: str = step.get("command", "")
 
         # Skip steps before resume point
         if not reached_resume_point:
@@ -189,7 +299,7 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
         # Skip explicitly skipped steps
         if step_id in skip_step_ids:
             on_step_start(step_id, description)
-            on_output(f"[Skipped by user]\n")
+            on_output("[Skipped by user]\n")
             on_step_done(step_id, True)
             continue
 
@@ -214,8 +324,9 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
                 else:
                     on_output("No .env.example or .env.sample found, skipping.\n")
                     on_step_done(step_id, True)
-            except Exception as e:
-                on_error(step_id, str(e))
+            except Exception as exc:
+                on_error(step_id, str(exc))
+                on_step_done(step_id, False)
                 all_success = False
             continue
 
@@ -230,15 +341,17 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
             try:
                 proc = subprocess.run(
                     [python_exe, "-m", "venv", venv_path],
-                    cwd=project_dir, capture_output=True, text=True, env=env
+                    cwd=project_dir, capture_output=True, text=True, env=env,
                 )
                 if proc.returncode != 0:
                     on_error(step_id, f"Exit code {proc.returncode}\n{proc.stderr}")
+                    on_step_done(step_id, False)
                     all_success = False
                 else:
                     on_step_done(step_id, True)
-            except Exception as e:
-                on_error(step_id, str(e))
+            except Exception as exc:
+                on_error(step_id, str(exc))
+                on_step_done(step_id, False)
                 all_success = False
 
             if not all_success:
@@ -259,12 +372,12 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
         if is_windows():
             if ".venv\\Scripts\\" in command or ".venv/Scripts/" in command:
                 venv_scripts = os.path.join(project_dir, ".venv", scripts_dir)
-                command = command.replace(".venv\\Scripts\\", venv_scripts + "\\")
-                command = command.replace(".venv/Scripts/", venv_scripts + "/")
+                command = command.replace(".venv\\Scripts\\", f"{venv_scripts}\\")
+                command = command.replace(".venv/Scripts/", f"{venv_scripts}/")
         else:
             if ".venv/bin/" in command:
                 venv_scripts = os.path.join(project_dir, ".venv", scripts_dir)
-                command = command.replace(".venv/bin/", venv_scripts + "/")
+                command = command.replace(".venv/bin/", f"{venv_scripts}/")
 
         # --- Handle chained commands (&&) ---
         sub_commands = _split_chained_commands(command)
@@ -282,7 +395,7 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
             on_output(f"$ {sub_cmd}\n")
 
             returncode, output_lines = _run_single_command(
-                " " + sub_cmd, cwd, env, job, on_output, cancel_event
+                sub_cmd, cwd, env, job, on_output, cancel_event,
             )
 
             if cancel_event and cancel_event.is_set():
@@ -301,6 +414,7 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
         if not step_failed:
             on_step_done(step_id, True)
         else:
+            on_step_done(step_id, False)
             break
 
     close_job_object(job)

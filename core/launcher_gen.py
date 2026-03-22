@@ -1,13 +1,32 @@
 """
-core/launcher_gen.py — Generates cross-platform launch scripts for installed projects
+core/launcher_gen.py — Generates cross-platform launch scripts for installed projects.
+
+Creates ``.bat`` (Windows) or ``.sh`` (Unix) scripts that activate the project's
+virtual environment and run the launch command.
 """
+
+from __future__ import annotations
 
 import os
 import stat
-from core.platform_utils import is_windows, get_script_extension, get_venv_scripts_dir
+
+from core.platform_utils import get_script_extension, get_venv_scripts_dir, is_windows
 
 
-def _clean_launch_command(command, project_dir):
+# ---------------------------------------------------------------------------
+# Internal Helpers
+# ---------------------------------------------------------------------------
+
+def _clean_launch_command(command: str, project_dir: str) -> str:
+    """Clean a launch command by resolving placeholders and stripping ``cd`` chains.
+
+    Args:
+        command: The raw launch command from the plan.
+        project_dir: Absolute path to the project directory.
+
+    Returns:
+        The cleaned command string.
+    """
     command = command.replace("{project_dir}", project_dir)
     if "&&" in command:
         parts = command.split("&&")
@@ -16,13 +35,34 @@ def _clean_launch_command(command, project_dir):
     return command.strip()
 
 
-def _make_executable(path):
+def _make_executable(path: str) -> None:
+    """Set the executable permission bit on a file (Unix only).
+
+    Args:
+        path: Absolute path to the file.
+    """
     if not is_windows():
         st = os.stat(path)
         os.chmod(path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def generate_launcher(project_dir, plan):
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def generate_launcher(project_dir: str, plan: dict) -> str:
+    """Generate a launch script for an installed project.
+
+    Creates a ``.bat`` or ``.sh`` script in the project directory that
+    activates the venv (for Python projects) and runs the launch command.
+
+    Args:
+        project_dir: Absolute path to the project directory.
+        plan: The installation plan dict.
+
+    Returns:
+        Absolute path to the generated launch script.
+    """
     repo_name = os.path.basename(project_dir)
     launch_command = plan.get("launch_command", "echo No launch command configured")
     project_type = plan.get("project_type", "unknown")
@@ -68,7 +108,18 @@ echo "Starting {repo_name}..."
     return script_path
 
 
-def generate_webui_launcher(project_dir):
+def generate_webui_launcher(project_dir: str) -> str:
+    """Generate a WebUI launch script for an installed project.
+
+    Creates a ``.bat`` or ``.sh`` script that activates the venv and runs
+    ``webui.py`` with browser auto-open instructions.
+
+    Args:
+        project_dir: Absolute path to the project directory.
+
+    Returns:
+        Absolute path to the generated WebUI launch script.
+    """
     repo_name = os.path.basename(project_dir)
     ext = get_script_extension()
     scripts_dir = get_venv_scripts_dir()

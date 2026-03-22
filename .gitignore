@@ -44,3 +44,21 @@ bundled/git/*
 !bundled/git/.gitkeep
 bundled/node/*
 !bundled/node/.gitkeep
+
+# PyInstaller
+*.spec
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Audit plans (temporary)
+plans/

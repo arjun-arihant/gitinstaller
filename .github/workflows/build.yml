@@ -124,6 +124,8 @@ jobs:
             --hidden-import PIL \
             --hidden-import PIL.Image \
             --hidden-import dotenv \
+            --hidden-import core.paths \
+            --hidden-import core.utils \
             --hidden-import core.platform_utils \
             --hidden-import core.executor \
             --hidden-import core.github_fetcher \

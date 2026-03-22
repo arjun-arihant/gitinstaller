@@ -1,16 +1,29 @@
 """
-core/webui_gen.py — Detects if a project needs a WebUI and generates a Gradio interface
-Loads design.md for consistent theming. Auto-opens browser on launch.
+core/webui_gen.py — Detects if a project needs a WebUI and generates a Gradio interface.
+
+Loads ``data/design.md`` for consistent theming. Auto-opens browser on launch.
 """
 
-import os
+from __future__ import annotations
+
 import json
+import logging
+import os
 import subprocess
-import sys
+from typing import Callable, Optional
+
 import requests
 
+from core.paths import get_design_spec_path
 from core.platform_utils import is_windows, get_venv_pip
+from core.utils import strip_code_fences
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 WEBUI_INDICATORS = [
     "flask", "django", "fastapi", "streamlit", "gradio",
@@ -19,23 +32,42 @@ WEBUI_INDICATORS = [
 ]
 
 
-def _get_app_dir():
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# ---------------------------------------------------------------------------
+# Design Spec Loader
+# ---------------------------------------------------------------------------
 
+def _load_design_spec() -> str:
+    """Load the ``data/design.md`` specification file for WebUI theming.
 
-def _load_design_spec():
-    """Load the design.md specification file."""
-    design_path = os.path.join(_get_app_dir(), "data", "design.md")
+    Returns:
+        The design spec contents, or an empty string if unavailable.
+    """
+    design_path = get_design_spec_path()
     if os.path.isfile(design_path):
         try:
             with open(design_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception:
-            pass
+            logger.warning("Failed to read design spec at %s", design_path, exc_info=True)
     return ""
 
 
-def detect_needs_webui(plan, project_dir):
+# ---------------------------------------------------------------------------
+# WebUI Detection
+# ---------------------------------------------------------------------------
+
+def detect_needs_webui(plan: dict, project_dir: str) -> bool:
+    """Determine whether a project would benefit from a generated Gradio WebUI.
+
+    Returns ``False`` if the project already has a web interface, is a Node
+    project, or if web-related indicators are found in the launch command or
+    source files. Returns ``True`` only for Python projects that appear to
+    lack a web interface.
+
+    Args:
+        plan: The installation plan dict.
+        project_dir: Absolute path to the installed project directory.
+    """
     if plan.get("has_webui", False):
         return False
 
@@ -48,10 +80,7 @@ def detect_needs_webui(plan, project_dir):
         if indicator in launch_cmd:
             return False
 
-    entry_point = (plan.get("entry_point") or "").lower()
-    if entry_point in ("app.py", "server.py", "web.py", "main.py"):
-        pass
-
+    # Scan key source files for web framework imports
     if os.path.isdir(project_dir):
         for fname in os.listdir(project_dir):
             fl = fname.lower()
@@ -64,13 +93,17 @@ def detect_needs_webui(plan, project_dir):
                             if indicator in content:
                                 return False
                 except Exception:
-                    pass
+                    logger.debug("Failed to scan %s for web indicators", fpath, exc_info=True)
 
     if project_type == "python":
         return True
 
     return False
 
+
+# ---------------------------------------------------------------------------
+# WebUI Code Generation
+# ---------------------------------------------------------------------------
 
 WEBUI_SYSTEM_PROMPT = r"""You are an expert Python developer. Your job is to create a Gradio web interface for a GitHub project.
 
@@ -100,18 +133,19 @@ demo.launch(share=False, server_name="127.0.0.1")
 {design_spec}"""
 
 
-def _strip_code_fences(text):
-    text = text.strip()
-    if text.startswith("```"):
-        first_newline = text.find("\n")
-        if first_newline != -1:
-            text = text[first_newline + 1:]
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3].rstrip()
-    return text.strip()
+def generate_webui_code(repo_data: dict, plan: dict, api_key: str) -> str:
+    """Generate Gradio WebUI Python code for a project using AI.
 
+    Falls back to a generic template if the AI call fails.
 
-def generate_webui_code(repo_data, plan, api_key):
+    Args:
+        repo_data: Dict returned by ``fetch_repo_data()``.
+        plan: The installation plan dict.
+        api_key: OpenRouter API key.
+
+    Returns:
+        Python source code string for the WebUI.
+    """
     from core.claude_analyzer import MIMO_MODEL, OPENROUTER_URL
 
     design_spec = _load_design_spec()
@@ -155,21 +189,37 @@ Generate a webui.py that creates a themed Gradio interface following the design 
 
     try:
         resp = requests.post(
-            OPENROUTER_URL, headers=headers, json=payload, timeout=120
+            OPENROUTER_URL, headers=headers, json=payload, timeout=120,
         )
         if resp.status_code != 200:
-            raise Exception(f"OpenRouter error: {resp.status_code}")
+            raise RuntimeError(f"OpenRouter error: {resp.status_code}")
 
         data = resp.json()
         code = data["choices"][0]["message"]["content"]
-        code = _strip_code_fences(code)
+        code = strip_code_fences(code)
         return code
 
     except Exception:
+        logger.warning(
+            "AI WebUI generation failed, using fallback template",
+            exc_info=True,
+        )
         return _generate_fallback_webui(project_name, repo_data.get("description", ""))
 
 
-def _generate_fallback_webui(project_name, description):
+def _generate_fallback_webui(project_name: str, description: str) -> str:
+    """Generate a generic fallback Gradio WebUI template.
+
+    Note: The fallback UI provides a command runner interface. This is
+    intentionally limited to the project directory context.
+
+    Args:
+        project_name: Display name for the project.
+        description: Short project description.
+
+    Returns:
+        Python source code string.
+    """
     return f'''import gradio as gr
 import subprocess
 import webbrowser
@@ -258,7 +308,23 @@ demo.launch(share=False, server_name="127.0.0.1")
 '''
 
 
-def install_gradio_in_venv(project_dir, on_output=None):
+# ---------------------------------------------------------------------------
+# Gradio Installation
+# ---------------------------------------------------------------------------
+
+def install_gradio_in_venv(
+    project_dir: str,
+    on_output: Optional[Callable[[str], None]] = None,
+) -> bool:
+    """Install Gradio into the project's virtual environment.
+
+    Args:
+        project_dir: Absolute path to the project directory.
+        on_output: Optional callback for streaming install output.
+
+    Returns:
+        ``True`` if installation succeeded, ``False`` otherwise.
+    """
     pip_exe = get_venv_pip(project_dir)
     if not os.path.isfile(pip_exe):
         pip_exe = "pip"
@@ -279,21 +345,44 @@ def install_gradio_in_venv(project_dir, on_output=None):
             shell=True,
         )
 
-        for line in proc.stdout:
+        for line in proc.stdout:  # type: ignore[union-attr]
             line = line.rstrip("\n\r")
             if on_output:
-                on_output(line + "\n")
+                on_output(f"{line}\n")
 
         proc.wait()
         return proc.returncode == 0
 
-    except Exception as e:
+    except Exception as exc:
+        logger.error("Error installing gradio: %s", exc, exc_info=True)
         if on_output:
-            on_output(f"Error installing gradio: {e}\n")
+            on_output(f"Error installing gradio: {exc}\n")
         return False
 
 
-def build_webui(project_dir, repo_data, plan, api_key, on_output=None):
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def build_webui(
+    project_dir: str,
+    repo_data: dict,
+    plan: dict,
+    api_key: str,
+    on_output: Optional[Callable[[str], None]] = None,
+) -> str:
+    """Generate and install a Gradio WebUI for a project.
+
+    Args:
+        project_dir: Absolute path to the project directory.
+        repo_data: Dict returned by ``fetch_repo_data()``.
+        plan: The installation plan dict.
+        api_key: OpenRouter API key.
+        on_output: Optional callback for streaming progress output.
+
+    Returns:
+        Absolute path to the generated ``webui.py``, or empty string on failure.
+    """
     if on_output:
         on_output("Generating Gradio web UI code...\n")
 
@@ -310,9 +399,10 @@ def build_webui(project_dir, repo_data, plan, api_key, on_output=None):
             f.write(code)
         if on_output:
             on_output(f"Created {webui_path}\n")
-    except Exception as e:
+    except Exception as exc:
+        logger.error("Error writing webui.py: %s", exc, exc_info=True)
         if on_output:
-            on_output(f"Error writing webui.py: {e}\n")
+            on_output(f"Error writing webui.py: {exc}\n")
         return ""
 
     if on_output:

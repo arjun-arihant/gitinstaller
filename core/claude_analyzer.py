@@ -1,15 +1,29 @@
 """
-core/claude_analyzer.py — Sends docs to MiMo via OpenRouter, returns JSON step plan
+core/claude_analyzer.py — Sends repository documentation to an AI model via OpenRouter
+and returns a structured JSON installation plan.
+
+Uses the MiMo V2 Flash model for cost-effective analysis.
 """
 
+from __future__ import annotations
+
 import json
+import logging
+
 import requests
+
+from core.utils import strip_code_fences
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisError(Exception):
     """Raised when AI analysis fails or returns unparseable results."""
-    pass
 
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 MIMO_MODEL = "xiaomi/mimo-v2-flash"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -52,8 +66,19 @@ CRITICAL RULES:
 - Set has_webui to false if the project is a library, CLI tool, or has no built-in web interface"""
 
 
+# ---------------------------------------------------------------------------
+# Internal Helpers
+# ---------------------------------------------------------------------------
+
 def _build_user_message(repo_data: dict) -> str:
-    """Construct the user message from repo data."""
+    """Construct the user message from fetched repository data.
+
+    Args:
+        repo_data: Dict returned by ``fetch_repo_data()``.
+
+    Returns:
+        A formatted string containing all relevant documentation.
+    """
     parts = [
         f"Repository: {repo_data['owner']}/{repo_data['repo']}",
         f"Description: {repo_data['description']}",
@@ -77,20 +102,19 @@ def _build_user_message(repo_data: dict) -> str:
     return "\n".join(parts)
 
 
-def _strip_fences(text: str) -> str:
-    """Strip markdown code fences from AI response."""
-    text = text.strip()
-    if text.startswith("```"):
-        first_newline = text.find("\n")
-        if first_newline != -1:
-            text = text[first_newline + 1:]
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3].rstrip()
-    return text.strip()
+def _call_openrouter(messages: list[dict[str, str]], api_key: str) -> str:
+    """Make a chat completion request to OpenRouter.
 
+    Args:
+        messages: List of message dicts with ``role`` and ``content``.
+        api_key: OpenRouter API key.
 
-def _call_openrouter(messages: list, api_key: str) -> str:
-    """Make a chat completion request to OpenRouter."""
+    Returns:
+        The assistant's response content string.
+
+    Raises:
+        AnalysisError: On network errors or unexpected response structure.
+    """
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -106,10 +130,10 @@ def _call_openrouter(messages: list, api_key: str) -> str:
 
     try:
         resp = requests.post(
-            OPENROUTER_URL, headers=headers, json=payload, timeout=120
+            OPENROUTER_URL, headers=headers, json=payload, timeout=120,
         )
-    except requests.RequestException as e:
-        raise AnalysisError(f"Network error calling OpenRouter: {e}")
+    except requests.RequestException as exc:
+        raise AnalysisError(f"Network error calling OpenRouter: {exc}")
 
     if resp.status_code != 200:
         raise AnalysisError(
@@ -125,8 +149,19 @@ def _call_openrouter(messages: list, api_key: str) -> str:
 
 
 def _post_process_plan(plan: dict) -> dict:
-    """Fix common AI mistakes in the plan."""
-    steps = plan.get("steps", [])
+    """Fix common AI mistakes in the generated plan.
+
+    - Strips ``&&`` chains from commands (keeps only the meaningful part).
+    - Ensures ``has_webui`` field exists.
+    - Injects a ``venv_create`` step for Python projects if the AI omitted it.
+
+    Args:
+        plan: The raw parsed plan dict.
+
+    Returns:
+        The corrected plan dict (modified in place and returned).
+    """
+    steps: list[dict] = plan.get("steps", [])
 
     for step in steps:
         command = step.get("command", "")
@@ -136,13 +171,13 @@ def _post_process_plan(plan: dict) -> dict:
             # Remove cd commands, keep the rest
             meaningful = [p for p in parts if not p.lower().startswith("cd ")]
             if meaningful:
-                step["command"] = meaningful[0]  # Take the first meaningful command
+                step["command"] = meaningful[0]
 
     # Ensure has_webui field exists
     if "has_webui" not in plan:
         plan["has_webui"] = False
 
-    # Force venv_create step for python projects if AI omitted it
+    # Force venv_create step for Python projects if AI omitted it
     if plan.get("project_type") == "python":
         has_venv = any(s.get("type") == "venv_create" for s in steps)
         if not has_venv:
@@ -150,7 +185,7 @@ def _post_process_plan(plan: dict) -> dict:
                 "id": 999,
                 "type": "venv_create",
                 "description": "Create virtual environment",
-                "command": "python -m venv .venv"
+                "command": "python -m venv .venv",
             }
             # Insert after git_clone if it exists, otherwise at start
             insert_idx = 0
@@ -159,30 +194,48 @@ def _post_process_plan(plan: dict) -> dict:
                     insert_idx = i + 1
                     break
             steps.insert(insert_idx, venv_step)
+            # Re-number step ids sequentially
             for i, s in enumerate(steps):
                 s["id"] = i + 1
 
     return plan
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def analyze_repo(repo_data: dict, api_key: str) -> dict:
-    """
-    Send the fetched repo data to MiMo V2 Flash via OpenRouter and get back
-    a structured JSON installation plan.
+    """Analyse fetched repository data and produce a structured installation plan.
+
+    Sends the documentation to the AI model via OpenRouter, parses the JSON
+    response, and post-processes it to fix common mistakes. If the first
+    response is not valid JSON, a retry is attempted.
+
+    Args:
+        repo_data: Dict returned by ``fetch_repo_data()``.
+        api_key: OpenRouter API key.
+
+    Returns:
+        A validated installation plan dict.
+
+    Raises:
+        AnalysisError: If the AI response cannot be parsed after retry.
     """
     user_msg = _build_user_message(repo_data)
 
-    messages = [
+    messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ]
 
     response_text = _call_openrouter(messages, api_key)
-    cleaned = _strip_fences(response_text)
+    cleaned = strip_code_fences(response_text)
 
     try:
         plan = json.loads(cleaned)
     except json.JSONDecodeError:
+        logger.warning("First AI response was not valid JSON, retrying...")
         retry_messages = messages + [
             {"role": "assistant", "content": response_text},
             {
@@ -196,7 +249,7 @@ def analyze_repo(repo_data: dict, api_key: str) -> dict:
         ]
 
         retry_text = _call_openrouter(retry_messages, api_key)
-        retry_cleaned = _strip_fences(retry_text)
+        retry_cleaned = strip_code_fences(retry_text)
 
         try:
             plan = json.loads(retry_cleaned)
