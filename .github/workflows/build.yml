@@ -166,7 +166,7 @@ jobs:
           # Include bundled runtimes if present in the repo
           BUNDLED_FLAG=""
           if [ -d "bundled" ] && [ "$(ls -A bundled/)" ]; then
-            BUNDLED_FLAG="--add-data \"bundled${SEP}bundled\""
+            BUNDLED_FLAG="--add-data bundled${SEP}bundled"
           fi
 
           pyinstaller \
