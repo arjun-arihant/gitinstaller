@@ -30,8 +30,10 @@ ENV/
 env.bak/
 venv.bak/
 
-# GitInstaller local config & state
-data/
+# GitInstaller local config & state (runtime-generated, not design.md)
+data/config.json
+data/projects.json
+data/plans/
 test/
 .agent/
 

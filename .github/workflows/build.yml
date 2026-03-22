@@ -54,7 +54,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip setuptools wheel
           pip install pyinstaller
 
       - name: Install app dependencies (Windows)
@@ -64,10 +64,8 @@ jobs:
       - name: Install app dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          pip install pywebview requests python-dotenv Pillow
+          pip install pywebview requests python-dotenv Pillow pystray
           pip install pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-WebKit
-          # pystray on macOS needs AppKit
-          pip install pystray
 
       - name: Install app dependencies (Linux)
         if: runner.os == 'Linux'
@@ -75,54 +73,54 @@ jobs:
           pip install pywebview requests python-dotenv Pillow pystray
           pip install PyGObject
 
+      # ─── Prepare data directory ───
+
+      - name: Ensure data directory exists
+        shell: bash
+        run: |
+          mkdir -p data
+          # design.md should be in the repo, but create fallback if missing
+          if [ ! -f data/design.md ]; then
+            echo "# GitInstaller WebUI Design" > data/design.md
+            echo "No design spec configured." >> data/design.md
+          fi
+
       # ─── Build ───
 
-      - name: Build with PyInstaller (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Build with PyInstaller
+        shell: bash
         run: |
-          pyinstaller `
-            --name GitInstaller `
-            --onefile `
-            --windowed `
-            --icon frontend/icon.ico `
-            --add-data "frontend;frontend" `
-            --add-data "data;data" `
-            --add-data "core;core" `
-            --hidden-import webview `
-            --hidden-import clr `
-            --hidden-import pystray `
-            --hidden-import PIL `
-            --hidden-import PIL.Image `
-            --hidden-import dotenv `
-            --hidden-import core.platform_utils `
-            --hidden-import core.executor `
-            --hidden-import core.github_fetcher `
-            --hidden-import core.claude_analyzer `
-            --hidden-import core.launcher_gen `
-            --hidden-import core.webui_gen `
-            --hidden-import core.project_manager `
-            app.py
+          SEP=":"
+          ICON_FLAG=""
+          EXTRA_IMPORTS=""
 
-      - name: Build with PyInstaller (macOS)
-        if: runner.os == 'macOS'
-        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            SEP=";"
+            ICON_FLAG="--icon frontend/icon.ico"
+            EXTRA_IMPORTS="--hidden-import clr"
+          fi
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            EXTRA_IMPORTS="--hidden-import objc --hidden-import AppKit --hidden-import WebKit --hidden-import Foundation"
+          fi
+
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            EXTRA_IMPORTS="--hidden-import gi"
+          fi
+
           pyinstaller \
             --name GitInstaller \
             --onefile \
             --windowed \
-            --add-data "frontend:frontend" \
-            --add-data "data:data" \
-            --add-data "core:core" \
+            $ICON_FLAG \
+            --add-data "frontend${SEP}frontend" \
+            --add-data "data${SEP}data" \
+            --add-data "core${SEP}core" \
             --hidden-import webview \
             --hidden-import pystray \
             --hidden-import PIL \
             --hidden-import PIL.Image \
             --hidden-import dotenv \
-            --hidden-import objc \
-            --hidden-import AppKit \
-            --hidden-import WebKit \
-            --hidden-import Foundation \
             --hidden-import core.platform_utils \
             --hidden-import core.executor \
             --hidden-import core.github_fetcher \
@@ -130,31 +128,7 @@ jobs:
             --hidden-import core.launcher_gen \
             --hidden-import core.webui_gen \
             --hidden-import core.project_manager \
-            app.py
-
-      - name: Build with PyInstaller (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          pyinstaller \
-            --name GitInstaller \
-            --onefile \
-            --windowed \
-            --add-data "frontend:frontend" \
-            --add-data "data:data" \
-            --add-data "core:core" \
-            --hidden-import webview \
-            --hidden-import pystray \
-            --hidden-import PIL \
-            --hidden-import PIL.Image \
-            --hidden-import dotenv \
-            --hidden-import gi \
-            --hidden-import core.platform_utils \
-            --hidden-import core.executor \
-            --hidden-import core.github_fetcher \
-            --hidden-import core.claude_analyzer \
-            --hidden-import core.launcher_gen \
-            --hidden-import core.webui_gen \
-            --hidden-import core.project_manager \
+            $EXTRA_IMPORTS \
             app.py
 
       # ─── Package ───
