@@ -12,17 +12,15 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             artifact: GitInstaller-Windows
-            ext: .exe
           - os: ubuntu-22.04
             artifact: GitInstaller-Linux
-            ext: ""
           - os: macos-latest
             artifact: GitInstaller-macOS
-            ext: ""
 
     runs-on: ${{ matrix.os }}
 
@@ -35,6 +33,8 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+
+      # ─── Platform-specific system deps ───
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -50,19 +50,36 @@ jobs:
             gobject-introspection \
             libcairo2-dev
 
+      # ─── Python deps ───
+
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
           pip install pyinstaller
 
-      # Linux needs PyGObject installed via pip after system deps
-      - name: Install PyGObject (Linux)
+      - name: Install app dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: pip install -r requirements.txt
+
+      - name: Install app dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pip install pywebview requests python-dotenv Pillow
+          pip install pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-WebKit
+          # pystray on macOS needs AppKit
+          pip install pystray
+
+      - name: Install app dependencies (Linux)
         if: runner.os == 'Linux'
-        run: pip install PyGObject
+        run: |
+          pip install pywebview requests python-dotenv Pillow pystray
+          pip install PyGObject
+
+      # ─── Build ───
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           pyinstaller `
             --name GitInstaller `
@@ -76,7 +93,15 @@ jobs:
             --hidden-import clr `
             --hidden-import pystray `
             --hidden-import PIL `
+            --hidden-import PIL.Image `
             --hidden-import dotenv `
+            --hidden-import core.platform_utils `
+            --hidden-import core.executor `
+            --hidden-import core.github_fetcher `
+            --hidden-import core.claude_analyzer `
+            --hidden-import core.launcher_gen `
+            --hidden-import core.webui_gen `
+            --hidden-import core.project_manager `
             app.py
 
       - name: Build with PyInstaller (macOS)
@@ -86,14 +111,25 @@ jobs:
             --name GitInstaller \
             --onefile \
             --windowed \
-            --icon frontend/icon.png \
             --add-data "frontend:frontend" \
             --add-data "data:data" \
             --add-data "core:core" \
             --hidden-import webview \
             --hidden-import pystray \
             --hidden-import PIL \
+            --hidden-import PIL.Image \
             --hidden-import dotenv \
+            --hidden-import objc \
+            --hidden-import AppKit \
+            --hidden-import WebKit \
+            --hidden-import Foundation \
+            --hidden-import core.platform_utils \
+            --hidden-import core.executor \
+            --hidden-import core.github_fetcher \
+            --hidden-import core.claude_analyzer \
+            --hidden-import core.launcher_gen \
+            --hidden-import core.webui_gen \
+            --hidden-import core.project_manager \
             app.py
 
       - name: Build with PyInstaller (Linux)
@@ -109,39 +145,62 @@ jobs:
             --hidden-import webview \
             --hidden-import pystray \
             --hidden-import PIL \
+            --hidden-import PIL.Image \
             --hidden-import dotenv \
             --hidden-import gi \
+            --hidden-import core.platform_utils \
+            --hidden-import core.executor \
+            --hidden-import core.github_fetcher \
+            --hidden-import core.claude_analyzer \
+            --hidden-import core.launcher_gen \
+            --hidden-import core.webui_gen \
+            --hidden-import core.project_manager \
             app.py
+
+      # ─── Package ───
 
       - name: Create bundled directory stubs
         shell: bash
         run: |
-          mkdir -p dist/bundled/python
-          mkdir -p dist/bundled/git
-          mkdir -p dist/bundled/node
-          touch dist/bundled/python/.gitkeep
-          touch dist/bundled/git/.gitkeep
-          touch dist/bundled/node/.gitkeep
+          mkdir -p staging/bundled/python
+          mkdir -p staging/bundled/git
+          mkdir -p staging/bundled/node
+          touch staging/bundled/python/.gitkeep
+          touch staging/bundled/git/.gitkeep
+          touch staging/bundled/node/.gitkeep
+
+      - name: Stage executable (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cp dist/GitInstaller.exe staging/
+
+      - name: Stage executable (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cp dist/GitInstaller staging/
+          chmod +x staging/GitInstaller
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          Compress-Archive -Path dist/GitInstaller.exe, dist/bundled -DestinationPath dist/${{ matrix.artifact }}.zip
+          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
-          cd dist
-          chmod +x GitInstaller
-          tar -czf ${{ matrix.artifact }}.tar.gz GitInstaller bundled/
+          cd staging
+          tar -czf "../${{ matrix.artifact }}.tar.gz" .
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
-            dist/${{ matrix.artifact }}.zip
-            dist/${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+            ${{ matrix.artifact }}.tar.gz
           if-no-files-found: ignore
 
   release:
