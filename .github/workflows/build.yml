@@ -88,8 +88,60 @@ jobs:
             echo "No design spec configured." >> data/design.md
           fi
 
-      # ─── Build ───
+      # ─── Download Portable Runtimes ───
 
+      - name: Download Portable Runtimes
+        shell: bash
+        run: |
+          mkdir -p bundled/python bundled/node bundled/git || true
+          
+          echo "Downloading Python..."
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+              PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-aarch64-apple-darwin-install_only.tar.gz"
+            else
+              PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-x86_64-apple-darwin-install_only.tar.gz"
+            fi
+          else
+            PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-x86_64-unknown-linux-gnu-install_only.tar.gz"
+          fi
+          curl -L -o python.tar.gz "$PYTHON_URL"
+          tar -xf python.tar.gz -C bundled/python --strip-components=1
+          rm -f python.tar.gz
+
+          echo "Downloading Node.js..."
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            curl -L -o node.zip "https://nodejs.org/dist/v20.12.2/node-v20.12.2-win-x64.zip"
+            unzip -q node.zip -d bundled/node_temp
+            mv bundled/node_temp/*/* bundled/node/
+            rm -rf bundled/node_temp node.zip
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+              NODE_URL="https://nodejs.org/dist/v20.12.2/node-v20.12.2-darwin-arm64.tar.gz"
+            else
+              NODE_URL="https://nodejs.org/dist/v20.12.2/node-v20.12.2-darwin-x64.tar.gz"
+            fi
+            curl -L -o node.tar.gz "$NODE_URL"
+            tar -xf node.tar.gz -C bundled/node --strip-components=1
+            rm -f node.tar.gz
+          else
+            curl -L -o node.tar.xz "https://nodejs.org/dist/v20.12.2/node-v20.12.2-linux-x64.tar.xz"
+            tar -xf node.tar.xz -C bundled/node --strip-components=1
+            rm -f node.tar.xz
+          fi
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "Downloading MinGit (Windows only)..."
+            curl -L -o git.zip "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip"
+            unzip -q git.zip -d bundled/git/
+            rm -f git.zip
+          fi
+
+      # ─── Build ───
       - name: Build with PyInstaller
         shell: bash
         run: |
@@ -111,6 +163,12 @@ jobs:
             EXTRA_IMPORTS="--hidden-import gi"
           fi
 
+          # Include bundled runtimes if present in the repo
+          BUNDLED_FLAG=""
+          if [ -d "bundled" ] && [ "$(ls -A bundled/)" ]; then
+            BUNDLED_FLAG="--add-data \"bundled${SEP}bundled\""
+          fi
+
           pyinstaller \
             --name GitInstaller \
             --onefile \
@@ -119,6 +177,7 @@ jobs:
             --add-data "frontend${SEP}frontend" \
             --add-data "data${SEP}data" \
             --add-data "core${SEP}core" \
+            $BUNDLED_FLAG \
             --hidden-import webview \
             --hidden-import pystray \
             --hidden-import PIL \
@@ -137,16 +196,6 @@ jobs:
             app.py
 
       # ─── Package ───
-
-      - name: Create bundled directory stubs
-        shell: bash
-        run: |
-          mkdir -p staging/bundled/python
-          mkdir -p staging/bundled/git
-          mkdir -p staging/bundled/node
-          touch staging/bundled/python/.gitkeep
-          touch staging/bundled/git/.gitkeep
-          touch staging/bundled/node/.gitkeep
 
       - name: Stage executable (Windows)
         if: runner.os == 'Windows'
