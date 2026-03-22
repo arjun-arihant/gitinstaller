@@ -1,5 +1,6 @@
 """
 core/webui_gen.py — Detects if a project needs a WebUI and generates a Gradio interface
+Loads design.md for consistent theming. Auto-opens browser on launch.
 """
 
 import os
@@ -7,6 +8,8 @@ import json
 import subprocess
 import sys
 import requests
+
+from core.platform_utils import is_windows, get_venv_pip
 
 
 WEBUI_INDICATORS = [
@@ -16,39 +19,43 @@ WEBUI_INDICATORS = [
 ]
 
 
-def detect_needs_webui(plan: dict, project_dir: str) -> bool:
-    """
-    Check if a project could benefit from a Gradio web UI.
-    Returns True if the project has no built-in web interface.
-    """
-    # Check the AI's assessment
+def _get_app_dir():
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_design_spec():
+    """Load the design.md specification file."""
+    design_path = os.path.join(_get_app_dir(), "data", "design.md")
+    if os.path.isfile(design_path):
+        try:
+            with open(design_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    return ""
+
+
+def detect_needs_webui(plan, project_dir):
     if plan.get("has_webui", False):
         return False
 
     project_type = plan.get("project_type", "unknown")
-
-    # Node projects typically have their own frontend
     if project_type == "node":
         return False
 
-    # Check launch command for web framework indicators
     launch_cmd = (plan.get("launch_command") or "").lower()
     for indicator in WEBUI_INDICATORS:
         if indicator in launch_cmd:
             return False
 
-    # Check if entry point suggests a web app
     entry_point = (plan.get("entry_point") or "").lower()
     if entry_point in ("app.py", "server.py", "web.py", "main.py"):
-        # Could be a web app — check files in project dir
         pass
 
-    # Check for web framework files in the project
     if os.path.isdir(project_dir):
         for fname in os.listdir(project_dir):
             fl = fname.lower()
             if fl in ("app.py", "server.py", "wsgi.py"):
-                # Read the file and check for web framework imports
                 fpath = os.path.join(project_dir, fname)
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="replace") as f:
@@ -59,33 +66,41 @@ def detect_needs_webui(plan: dict, project_dir: str) -> bool:
                 except Exception:
                     pass
 
-    # If it's a Python project (library/CLI) with no web UI detected, offer one
     if project_type == "python":
         return True
 
     return False
 
 
-WEBUI_SYSTEM_PROMPT = r"""You are an expert Python developer. Your job is to create a simple, functional Gradio web interface for a GitHub project.
+WEBUI_SYSTEM_PROMPT = r"""You are an expert Python developer. Your job is to create a Gradio web interface for a GitHub project.
 
 You must respond with ONLY valid Python code — no markdown, no code fences, no explanation. Just the raw Python code.
 
-The code should:
+The code MUST:
 1. Import gradio as gr
 2. Import the project's main module/package
-3. Create a simple Gradio interface that demonstrates the project's core functionality
-4. Use gr.Blocks() for the layout
-5. Include a title and description
-6. Launch with share=False and server_name="127.0.0.1"
-7. Be a complete, runnable Python script saved as webui.py in the project root
-8. Handle imports gracefully — if the project can't be imported, show an error message
-9. Keep it simple but functional — focus on the main use case from the README
+3. Create a Gradio interface that demonstrates the project's core functionality
+4. Use gr.Blocks() with the EXACT theme provided in the design specification below
+5. Include a title heading and description using gr.Markdown
+6. Include the GitInstaller branding footer as specified in the design spec
+7. Launch with share=False, server_name="127.0.0.1"
+8. Auto-open the browser using webbrowser.open() in a threading.Timer
+9. Be a complete, runnable Python script
+10. Handle imports gracefully — if the project can't be imported, show an error message
+11. Keep it functional — focus on the main use case from the README
 
-IMPORTANT: The script must work from the project's root directory with the project's virtual environment activated."""
+IMPORTANT: The script must include this auto-launch pattern:
+```python
+import webbrowser
+import threading
+threading.Timer(1.5, lambda: webbrowser.open("http://127.0.0.1:7860")).start()
+demo.launch(share=False, server_name="127.0.0.1")
+```
+
+{design_spec}"""
 
 
-def _strip_code_fences(text: str) -> str:
-    """Strip markdown code fences from AI response."""
+def _strip_code_fences(text):
     text = text.strip()
     if text.startswith("```"):
         first_newline = text.find("\n")
@@ -96,14 +111,12 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
-def generate_webui_code(repo_data: dict, plan: dict, api_key: str) -> str:
-    """
-    Use AI to generate a Gradio web UI script for the project.
-    Returns the generated Python code as a string.
-    """
+def generate_webui_code(repo_data, plan, api_key):
     from core.claude_analyzer import MIMO_MODEL, OPENROUTER_URL
 
-    # Build context about the project
+    design_spec = _load_design_spec()
+    system_prompt = WEBUI_SYSTEM_PROMPT.replace("{design_spec}", design_spec)
+
     readme = repo_data.get("readme", "(No README)")
     entry_point = plan.get("entry_point", "unknown")
     project_name = repo_data.get("repo", "project")
@@ -122,7 +135,7 @@ README:
 Extra files found:
 {json.dumps(list(repo_data.get('extra_files', {}).keys()))}
 
-Generate a webui.py that creates a Gradio interface for the main functionality described in the README."""
+Generate a webui.py that creates a themed Gradio interface following the design specification provided in the system prompt."""
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -134,7 +147,7 @@ Generate a webui.py that creates a Gradio interface for the main functionality d
     payload = {
         "model": MIMO_MODEL,
         "messages": [
-            {"role": "system", "content": WEBUI_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.2,
@@ -152,16 +165,15 @@ Generate a webui.py that creates a Gradio interface for the main functionality d
         code = _strip_code_fences(code)
         return code
 
-    except Exception as e:
-        # Fallback: generate a basic template
+    except Exception:
         return _generate_fallback_webui(project_name, repo_data.get("description", ""))
 
 
-def _generate_fallback_webui(project_name: str, description: str) -> str:
-    """Generate a basic fallback Gradio UI when AI generation fails."""
+def _generate_fallback_webui(project_name, description):
     return f'''import gradio as gr
 import subprocess
-import sys
+import webbrowser
+import threading
 
 def run_command(command):
     """Run a shell command and return output."""
@@ -178,7 +190,45 @@ def run_command(command):
     except Exception as e:
         return f"Error: {{e}}"
 
-with gr.Blocks(title="{project_name} Web UI", theme=gr.themes.Soft()) as demo:
+theme = gr.themes.Base(
+    primary_hue=gr.themes.Color(
+        c50="#e8f0fe", c100="#d0e1fc", c200="#a1c3f9",
+        c300="#72a5f6", c400="#4A90D9", c500="#4A90D9",
+        c600="#3b7ac4", c700="#2c64af", c800="#1d4e9a",
+        c900="#0e3885", c950="#072260"
+    ),
+    neutral_hue=gr.themes.Color(
+        c50="#e1e2e6", c100="#c3c5cc", c200="#909296",
+        c300="#6b6d72", c400="#55565c", c500="#44454b",
+        c600="#3a3b41", c700="#2c2d33", c800="#25262b",
+        c900="#1a1b1e", c950="#111113"
+    ),
+    font=["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+    font_mono=["Cascadia Code", "Consolas", "Fira Code", "monospace"],
+).set(
+    body_background_fill="#1a1b1e",
+    body_background_fill_dark="#1a1b1e",
+    block_background_fill="#25262b",
+    block_background_fill_dark="#25262b",
+    block_border_color="#3a3b41",
+    block_border_color_dark="#3a3b41",
+    block_label_text_color="#909296",
+    block_label_text_color_dark="#909296",
+    block_title_text_color="#e1e2e6",
+    block_title_text_color_dark="#e1e2e6",
+    input_background_fill="#2c2d33",
+    input_background_fill_dark="#2c2d33",
+    input_border_color="#3a3b41",
+    input_border_color_dark="#3a3b41",
+    button_primary_background_fill="#4A90D9",
+    button_primary_background_fill_dark="#4A90D9",
+    button_primary_text_color="#ffffff",
+    button_primary_text_color_dark="#ffffff",
+    border_color_primary="#3a3b41",
+    border_color_primary_dark="#3a3b41",
+)
+
+with gr.Blocks(title="{project_name} — GitInstaller", theme=theme) as demo:
     gr.Markdown("# {project_name}")
     gr.Markdown("{description}")
 
@@ -196,16 +246,21 @@ with gr.Blocks(title="{project_name} Web UI", theme=gr.themes.Soft()) as demo:
 
     run_btn.click(fn=run_command, inputs=[cmd_input], outputs=[output])
 
+    gr.Markdown(
+        "<center style=\'color: #6b6d72; font-size: 12px; margin-top: 16px;\'>"
+        "Built with <a href=\'https://github.com/arjun-arihant/gitinstaller\' "
+        "style=\'color: #4A90D9; text-decoration: none;\'>GitInstaller</a>"
+        "</center>"
+    )
+
+threading.Timer(1.5, lambda: webbrowser.open("http://127.0.0.1:7860")).start()
 demo.launch(share=False, server_name="127.0.0.1")
 '''
 
 
-def install_gradio_in_venv(project_dir: str, on_output=None) -> bool:
-    """Install gradio into the project's virtual environment."""
-    pip_exe = os.path.join(project_dir, ".venv", "Scripts", "pip.exe")
-
+def install_gradio_in_venv(project_dir, on_output=None):
+    pip_exe = get_venv_pip(project_dir)
     if not os.path.isfile(pip_exe):
-        # Try system pip as fallback
         pip_exe = "pip"
 
     cmd = f'"{pip_exe}" install gradio'
@@ -238,16 +293,10 @@ def install_gradio_in_venv(project_dir: str, on_output=None) -> bool:
         return False
 
 
-def build_webui(project_dir: str, repo_data: dict, plan: dict, api_key: str,
-                on_output=None) -> str:
-    """
-    Full pipeline: generate webui code, install gradio, write webui.py.
-    Returns path to webui.py on success, empty string on failure.
-    """
+def build_webui(project_dir, repo_data, plan, api_key, on_output=None):
     if on_output:
         on_output("Generating Gradio web UI code...\n")
 
-    # Generate the code
     code = generate_webui_code(repo_data, plan, api_key)
 
     if not code:
@@ -255,7 +304,6 @@ def build_webui(project_dir: str, repo_data: dict, plan: dict, api_key: str,
             on_output("Failed to generate web UI code.\n")
         return ""
 
-    # Write webui.py
     webui_path = os.path.join(project_dir, "webui.py")
     try:
         with open(webui_path, "w", encoding="utf-8") as f:
@@ -267,7 +315,6 @@ def build_webui(project_dir: str, repo_data: dict, plan: dict, api_key: str,
             on_output(f"Error writing webui.py: {e}\n")
         return ""
 
-    # Install gradio
     if on_output:
         on_output("Installing Gradio...\n")
 

@@ -33,9 +33,12 @@ venv.bak/
 # GitInstaller local config & state
 data/
 test/
+.agent/
 
 # Bundled binaries (ignore contents, keep directory shell)
 bundled/python/*
 !bundled/python/.gitkeep
 bundled/git/*
 !bundled/git/.gitkeep
+bundled/node/*
+!bundled/node/.gitkeep

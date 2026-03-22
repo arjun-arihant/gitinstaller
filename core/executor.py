@@ -1,40 +1,43 @@
 """
-core/executor.py — Runs installation steps sequentially using subprocess + Windows Job Objects
+core/executor.py — Runs installation steps sequentially using subprocess
+Supports cancel (via threading.Event), retry from step, and skip steps.
+Cross-platform via platform_utils.
 """
 
 import os
 import sys
 import shutil
 import subprocess
-import ctypes
-import ctypes.wintypes
+import threading
+
+from core.platform_utils import (
+    is_windows, create_job_object, assign_to_job, close_job_object,
+    terminate_job_object, get_popen_kwargs, build_env, get_venv_scripts_dir
+)
 
 
 def _get_app_dir():
-    """Get the directory where the app is installed."""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _get_bundled_python():
-    """Resolve path to bundled Python executable, fallback to system."""
     app_dir = _get_app_dir()
-    bundled = os.path.join(app_dir, "bundled", "python", "python.exe")
+    if is_windows():
+        bundled = os.path.join(app_dir, "bundled", "python", "python.exe")
+    else:
+        bundled = os.path.join(app_dir, "bundled", "python", "bin", "python3")
     if os.path.isfile(bundled):
         return bundled
-    # Fallback to system Python with warning
     print("[WARNING] Bundled Python not found, using system Python")
     if getattr(sys, 'frozen', False):
-        import shutil
-        sys_python = shutil.which("python")
+        sys_python = shutil.which("python3") or shutil.which("python")
         if sys_python:
             return sys_python
-        else:
-            raise RuntimeError("Bundled Python not found, and system Python not found in PATH!")
+        raise RuntimeError("Bundled Python not found, and system Python not found in PATH!")
     return sys.executable
 
 
 def _get_bundled_git_dir():
-    """Resolve path to bundled Git bin directory, fallback to empty string."""
     app_dir = _get_app_dir()
     bundled = os.path.join(app_dir, "bundled", "git", "bin")
     if os.path.isdir(bundled):
@@ -43,96 +46,28 @@ def _get_bundled_git_dir():
     return ""
 
 
-def create_job_object():
-    """Create a Windows Job Object to group all child processes."""
-    kernel32 = ctypes.windll.kernel32
-
-    job = kernel32.CreateJobObjectW(None, None)
-    if not job:
-        return None
-
-    class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
-        _fields_ = [
-            ("PerProcessUserTimeLimit", ctypes.wintypes.LARGE_INTEGER),
-            ("PerJobUserTimeLimit", ctypes.wintypes.LARGE_INTEGER),
-            ("LimitFlags", ctypes.wintypes.DWORD),
-            ("MinimumWorkingSetSize", ctypes.c_size_t),
-            ("MaximumWorkingSetSize", ctypes.c_size_t),
-            ("ActiveProcessLimit", ctypes.wintypes.DWORD),
-            ("Affinity", ctypes.POINTER(ctypes.c_ulong)),
-            ("PriorityClass", ctypes.wintypes.DWORD),
-            ("SchedulingClass", ctypes.wintypes.DWORD),
-        ]
-
-    class IO_COUNTERS(ctypes.Structure):
-        _fields_ = [
-            ("ReadOperationCount", ctypes.c_ulonglong),
-            ("WriteOperationCount", ctypes.c_ulonglong),
-            ("OtherOperationCount", ctypes.c_ulonglong),
-            ("ReadTransferCount", ctypes.c_ulonglong),
-            ("WriteTransferCount", ctypes.c_ulonglong),
-            ("OtherTransferCount", ctypes.c_ulonglong),
-        ]
-
-    class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
-        _fields_ = [
-            ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
-            ("IoInfo", IO_COUNTERS),
-            ("ProcessMemoryLimit", ctypes.c_size_t),
-            ("JobMemoryLimit", ctypes.c_size_t),
-            ("PeakProcessMemoryUsed", ctypes.c_size_t),
-            ("PeakJobMemoryUsed", ctypes.c_size_t),
-        ]
-
-    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-    info.BasicLimitInformation.LimitFlags = 0x2000
-
-    kernel32.SetInformationJobObject(
-        job, 9, ctypes.byref(info), ctypes.sizeof(info),
-    )
-
-    return job
+def _get_bundled_node_dir():
+    """Locate bundled Node.js or fall back to system Node."""
+    app_dir = _get_app_dir()
+    if is_windows():
+        bundled = os.path.join(app_dir, "bundled", "node")
+    else:
+        bundled = os.path.join(app_dir, "bundled", "node", "bin")
+    if os.path.isdir(bundled):
+        return bundled
+    # Fall back to system node
+    node_path = shutil.which("node")
+    if node_path:
+        return os.path.dirname(node_path)
+    return ""
 
 
-def assign_to_job(job, process_handle):
-    """Assign a subprocess to the Job Object."""
-    if job:
-        ctypes.windll.kernel32.AssignProcessToJobObject(job, process_handle)
-
-
-def _build_env(project_dir: str) -> dict:
-    """Build a clean environment dict for subprocess execution."""
-    bundled_python_dir = os.path.dirname(_get_bundled_python())
-    bundled_git_dir = _get_bundled_git_dir()
-
-    path_parts = [
-        os.path.join(project_dir, ".venv", "Scripts"),
-        bundled_python_dir,
-    ]
-    if bundled_git_dir:
-        path_parts.append(bundled_git_dir)
-    path_parts.append(os.environ.get("PATH", ""))
-
-    env = {
-        "PATH": ";".join(path_parts),
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONUTF8": "1",
-    }
-
-    for key in ("SYSTEMROOT", "TEMP", "TMP", "APPDATA", "USERPROFILE",
-                "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "COMSPEC"):
-        val = os.environ.get(key)
-        if val:
-            env[key] = val
-
-    return env
-
-
-def _run_single_command(command, cwd, env, job, on_output):
+def _run_single_command(command, cwd, env, job, on_output, cancel_event=None):
     """Run a single shell command and stream output. Returns (returncode, output_lines)."""
     output_lines = []
 
     try:
+        popen_kwargs = get_popen_kwargs()
         proc = subprocess.Popen(
             command,
             cwd=cwd,
@@ -142,16 +77,22 @@ def _run_single_command(command, cwd, env, job, on_output):
             bufsize=1,
             env=env,
             shell=True,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            **popen_kwargs,
         )
 
-        try:
-            handle = int(proc._handle)
-            assign_to_job(job, handle)
-        except Exception:
-            pass
+        if is_windows() and job:
+            try:
+                handle = int(proc._handle)
+                assign_to_job(job, handle)
+            except Exception:
+                pass
 
         for line in proc.stdout:
+            if cancel_event and cancel_event.is_set():
+                from core.platform_utils import kill_process_tree
+                kill_process_tree(proc)
+                return -999, ["Installation cancelled by user."]
+
             line = line.rstrip("\n").rstrip("\r")
             output_lines.append(line)
             on_output(line + "\n")
@@ -170,45 +111,22 @@ def _run_single_command(command, cwd, env, job, on_output):
 
 
 def _fix_git_clone_command(command, project_dir):
-    """
-    Ensure git clone always clones into the exact project_dir path.
-    Git clone by default uses the repo name as the directory,
-    but we need owner-repo format.
-    """
-    # If the command doesn't already specify a target directory after the URL,
-    # append the project_dir basename
     parts = command.strip().split()
-
-    # Find the git clone URL (the last argument that looks like a URL or .git path)
-    # Typical: git clone https://github.com/owner/repo.git
-    # We want: git clone https://github.com/owner/repo.git "project_dir"
     if "clone" in parts:
-        # Check if a target directory is already specified
         clone_idx = parts.index("clone")
-        # Count non-flag arguments after 'clone'
-        non_flag_args = []
-        for p in parts[clone_idx + 1:]:
-            if not p.startswith("-"):
-                non_flag_args.append(p)
-
+        non_flag_args = [p for p in parts[clone_idx + 1:] if not p.startswith("-")]
         if len(non_flag_args) <= 1:
-            # Only the URL is specified, no target dir — append project_dir
             command = f'{command.rstrip()} "{project_dir}"'
-
     return command
 
 
 def _split_chained_commands(command):
-    """Split &&-chained commands into a list of individual commands."""
-    # Split on && but be careful not to split within quotes
     parts = []
     current = []
     in_quote = None
-
     i = 0
     while i < len(command):
         ch = command[i]
-
         if ch in ('"', "'") and in_quote is None:
             in_quote = ch
             current.append(ch)
@@ -223,34 +141,62 @@ def _split_chained_commands(command):
         else:
             current.append(ch)
         i += 1
-
     remainder = "".join(current).strip()
     if remainder:
         parts.append(remainder)
-
     return [p for p in parts if p]
 
 
 def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
-                  on_step_done, on_error):
+                  on_step_done, on_error, cancel_event=None,
+                  resume_from_step=None, skip_step_ids=None):
     """
-    Execute the installation steps sequentially inside the project directory.
-    Returns True if all steps succeeded, False if any step failed.
+    Execute the installation steps sequentially.
+    Returns True if all steps succeeded, False otherwise.
+
+    cancel_event: threading.Event — set to cancel mid-install
+    resume_from_step: int — skip steps before this step id
+    skip_step_ids: set — step ids to skip entirely
     """
     steps = plan.get("steps", [])
     if not steps:
         on_output("No installation steps found in the plan.\n")
         return False
 
+    skip_step_ids = skip_step_ids or set()
     job = create_job_object()
-    env = _build_env(project_dir)
+
+    bundled_python_dir = os.path.dirname(_get_bundled_python())
+    bundled_git_dir = _get_bundled_git_dir()
+    bundled_node_dir = _get_bundled_node_dir()
+    env = build_env(project_dir, bundled_python_dir, bundled_git_dir, bundled_node_dir)
     all_success = True
+    reached_resume_point = resume_from_step is None
 
     for step in steps:
         step_id = step.get("id", 0)
         step_type = step.get("type", "custom")
         description = step.get("description", "Running command...")
         command = step.get("command", "")
+
+        # Skip steps before resume point
+        if not reached_resume_point:
+            if step_id == resume_from_step:
+                reached_resume_point = True
+            else:
+                continue
+
+        # Skip explicitly skipped steps
+        if step_id in skip_step_ids:
+            on_step_start(step_id, description)
+            on_output(f"[Skipped by user]\n")
+            on_step_done(step_id, True)
+            continue
+
+        # Check cancel
+        if cancel_event and cancel_event.is_set():
+            on_output("Installation cancelled.\n")
+            break
 
         on_step_start(step_id, description)
 
@@ -280,10 +226,12 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
         if step_type == "venv_create":
             python_exe = _get_bundled_python()
             venv_path = os.path.join(project_dir, ".venv")
-            on_output(f"$ \"{python_exe}\" -m venv \".venv\"\n")
+            on_output(f'$ "{python_exe}" -m venv ".venv"\n')
             try:
-                proc = subprocess.run([python_exe, "-m", "venv", venv_path],
-                                      cwd=project_dir, capture_output=True, text=True, env=env)
+                proc = subprocess.run(
+                    [python_exe, "-m", "venv", venv_path],
+                    cwd=project_dir, capture_output=True, text=True, env=env
+                )
                 if proc.returncode != 0:
                     on_error(step_id, f"Exit code {proc.returncode}\n{proc.stderr}")
                     all_success = False
@@ -292,7 +240,7 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
             except Exception as e:
                 on_error(step_id, str(e))
                 all_success = False
-            
+
             if not all_success:
                 break
             continue
@@ -306,39 +254,42 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
             cwd = project_dir
             os.makedirs(cwd, exist_ok=True)
 
-        # --- Resolve .venv\Scripts\ paths ---
-        if ".venv\\Scripts\\" in command or ".venv/Scripts/" in command:
-            command = command.replace(
-                ".venv\\Scripts\\",
-                os.path.join(project_dir, ".venv", "Scripts") + "\\"
-            )
-            command = command.replace(
-                ".venv/Scripts/",
-                os.path.join(project_dir, ".venv", "Scripts") + "/"
-            )
+        # --- Resolve .venv paths ---
+        scripts_dir = get_venv_scripts_dir()
+        if is_windows():
+            if ".venv\\Scripts\\" in command or ".venv/Scripts/" in command:
+                venv_scripts = os.path.join(project_dir, ".venv", scripts_dir)
+                command = command.replace(".venv\\Scripts\\", venv_scripts + "\\")
+                command = command.replace(".venv/Scripts/", venv_scripts + "/")
+        else:
+            if ".venv/bin/" in command:
+                venv_scripts = os.path.join(project_dir, ".venv", scripts_dir)
+                command = command.replace(".venv/bin/", venv_scripts + "/")
 
         # --- Handle chained commands (&&) ---
         sub_commands = _split_chained_commands(command)
 
         step_failed = False
-        for i, sub_cmd in enumerate(sub_commands):
+        for sub_cmd in sub_commands:
             sub_cmd = sub_cmd.strip()
             if not sub_cmd:
                 continue
 
-            # Skip "cd" commands — we already handle cwd properly
             if sub_cmd.lower().startswith("cd "):
-                on_output(f"[Skipping cd, using project dir as cwd]\n")
+                on_output("[Skipping cd, using project dir as cwd]\n")
                 continue
 
             on_output(f"$ {sub_cmd}\n")
 
-            # Determine cwd for this sub-command
-            run_cwd = cwd
-
             returncode, output_lines = _run_single_command(
-                " " + sub_cmd, run_cwd, env, job, on_output
+                " " + sub_cmd, cwd, env, job, on_output, cancel_event
             )
+
+            if cancel_event and cancel_event.is_set():
+                on_error(step_id, "Cancelled by user")
+                all_success = False
+                step_failed = True
+                break
 
             if returncode != 0:
                 error_tail = "\n".join(output_lines[-20:])
@@ -352,11 +303,5 @@ def execute_steps(plan, project_dir, clone_url, on_output, on_step_start,
         else:
             break
 
-    # Close the job object handle
-    if job:
-        try:
-            ctypes.windll.kernel32.CloseHandle(job)
-        except Exception:
-            pass
-
+    close_job_object(job)
     return all_success

@@ -1,21 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=900, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GitInstaller</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <!-- ==================== SCREEN 1: HOME ==================== -->
-    <div id="screen-home" class="screen">
+    <div id="screen-home" class="screen active">
         <div class="header">
             <div class="header-left">
-                <h1><span class="logo-icon">📦</span> GitInstaller</h1>
+                <h1>
+                    <svg class="logo-svg" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="28" height="28" rx="6" fill="#4A90D9"/>
+                        <path d="M8 14L12 18L20 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 7H21V14" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    </svg>
+                    GitInstaller
+                </h1>
                 <p class="subtitle">Install any GitHub project in one click</p>
             </div>
-            <button class="settings-btn" id="btn-settings" title="Settings">⚙</button>
+            <div class="header-actions">
+                <button class="icon-btn" id="btn-theme-toggle" title="Toggle theme">🌙</button>
+                <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
+            </div>
         </div>
 
         <!-- API Key Warning -->
@@ -27,10 +37,11 @@
         <!-- URL Input -->
         <div class="input-group">
             <label for="repo-url">Repository URL</label>
-            <div class="url-input-wrapper">
+            <div class="url-input-wrapper" id="drop-zone">
                 <input type="text" id="repo-url" class="url-input"
-                       placeholder="https://github.com/owner/repo"
+                       placeholder="https://github.com/owner/repo  or  owner/repo"
                        autocomplete="off" spellcheck="false">
+                <div id="repo-preview" class="repo-preview hidden"></div>
             </div>
             <div id="url-error" class="input-error"></div>
         </div>
@@ -46,7 +57,13 @@
 
         <!-- Installed Projects -->
         <div class="projects-section">
-            <h2>Installed Projects</h2>
+            <div class="projects-header">
+                <h2>Installed Projects</h2>
+                <div class="search-wrapper" id="search-wrapper">
+                    <input type="text" id="search-input" class="search-input"
+                           placeholder="Search projects..." autocomplete="off" spellcheck="false">
+                </div>
+            </div>
             <div id="project-list" class="project-list">
                 <div class="empty-state">No projects installed yet</div>
             </div>
@@ -54,7 +71,7 @@
     </div>
 
     <!-- ==================== SCREEN 2: ANALYZING ==================== -->
-    <div id="screen-analyzing" class="screen hidden">
+    <div id="screen-analyzing" class="screen">
         <div class="analyzing-screen" id="analyzing-content">
             <div class="spinner"></div>
             <div class="analyzing-title">Analyzing repository...</div>
@@ -68,10 +85,60 @@
         </div>
     </div>
 
+    <!-- ==================== SCREEN 2.5: PLAN REVIEW ==================== -->
+    <div id="screen-plan-review" class="screen">
+        <div class="plan-review-screen">
+            <div class="plan-review-header">
+                <div class="plan-review-title">
+                    <h2>Installation Plan</h2>
+                    <span id="plan-repo-name" class="plan-repo-badge"></span>
+                </div>
+                <button class="btn-back-small" id="btn-plan-cancel">Cancel</button>
+            </div>
+
+            <!-- Repo Info Card -->
+            <div class="plan-info-card">
+                <div class="plan-info-row">
+                    <span class="plan-info-label">Project Type</span>
+                    <span id="plan-project-type" class="plan-badge"></span>
+                </div>
+                <div class="plan-info-row">
+                    <span class="plan-info-label">Entry Point</span>
+                    <span id="plan-entry-point" class="plan-value"></span>
+                </div>
+                <div class="plan-info-row">
+                    <span class="plan-info-label">Estimated Size</span>
+                    <span id="plan-size" class="plan-value"></span>
+                </div>
+                <div class="plan-info-row">
+                    <span class="plan-info-label">Stars</span>
+                    <span id="plan-stars" class="plan-value"></span>
+                </div>
+            </div>
+
+            <!-- Steps Preview -->
+            <div class="plan-steps-section">
+                <h3>Steps to execute</h3>
+                <div id="plan-step-list" class="plan-step-list"></div>
+            </div>
+
+            <!-- Notes -->
+            <div id="plan-notes" class="plan-notes hidden"></div>
+
+            <!-- Action Buttons -->
+            <div class="plan-actions">
+                <button class="btn-primary" id="btn-approve-install">Approve &amp; Install</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ==================== SCREEN 3: INSTALLING ==================== -->
-    <div id="screen-installing" class="screen hidden">
+    <div id="screen-installing" class="screen">
         <div class="installing-screen">
-            <div class="installing-title">Installing <span id="installing-repo-name">project</span></div>
+            <div class="installing-header">
+                <div class="installing-title">Installing <span id="installing-repo-name">project</span></div>
+                <button class="btn-cancel" id="btn-cancel-install">Cancel</button>
+            </div>
 
             <!-- Step List -->
             <div id="step-list" class="step-list"></div>
@@ -82,18 +149,32 @@
             </div>
 
             <!-- Terminal Output -->
-            <div id="terminal" class="terminal"></div>
+            <div class="terminal-wrapper">
+                <div class="terminal-header">
+                    <button class="terminal-toggle" id="btn-toggle-terminal">
+                        <span id="terminal-toggle-icon">▼</span> Terminal Output
+                    </button>
+                    <button class="btn-copy-log" id="btn-copy-log" title="Copy log">📋 Copy</button>
+                </div>
+                <div id="terminal" class="terminal"></div>
+            </div>
 
-            <!-- Error Banner -->
+            <!-- Error Banner with Retry/Skip -->
             <div id="install-error-banner" class="install-error-banner">
-                <span>⚠️</span>
-                <span id="install-error-msg"></span>
+                <div class="error-banner-content">
+                    <span>⚠️</span>
+                    <span id="install-error-msg"></span>
+                </div>
+                <div class="error-banner-actions">
+                    <button class="btn-retry" id="btn-retry-step">Retry</button>
+                    <button class="btn-skip" id="btn-skip-step">Skip &amp; Continue</button>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- ==================== SCREEN 4: DONE ==================== -->
-    <div id="screen-done" class="screen hidden">
+    <div id="screen-done" class="screen">
         <div class="done-screen">
             <div class="done-checkmark">✓</div>
             <div class="done-title">Installation complete!</div>
@@ -133,6 +214,16 @@
         </div>
     </div>
 
+    <!-- ==================== SCREEN: CANCELLED ==================== -->
+    <div id="screen-cancelled" class="screen">
+        <div class="cancelled-screen">
+            <div class="cancelled-icon">⏹</div>
+            <div class="cancelled-title">Installation Cancelled</div>
+            <div class="cancelled-subtitle">The installation was stopped.</div>
+            <button class="btn-primary" id="btn-cancelled-home" style="max-width:260px">Back to Home</button>
+        </div>
+    </div>
+
     <!-- ==================== SETTINGS MODAL ==================== -->
     <div id="modal-settings" class="modal-backdrop hidden">
         <div class="modal">
@@ -140,6 +231,8 @@
                 <h2>Settings</h2>
                 <button class="modal-close" id="btn-modal-close">✕</button>
             </div>
+
+            <!-- OpenRouter API Key -->
             <div class="modal-field">
                 <label for="api-key-input">OpenRouter API Key</label>
                 <div class="password-wrapper">
@@ -149,8 +242,20 @@
                     <button class="toggle-password" id="btn-toggle-password" title="Show/hide">👁</button>
                 </div>
             </div>
-            <p class="modal-note">Your API key is stored locally on this machine only.</p>
-            <button class="btn-save" id="btn-save-key">Save</button>
+
+            <!-- GitHub Token -->
+            <div class="modal-field">
+                <label for="github-token-input">GitHub Token <span class="label-hint">(optional, for private repos)</span></label>
+                <div class="password-wrapper">
+                    <input type="password" id="github-token-input"
+                           placeholder="ghp_..."
+                           autocomplete="off" spellcheck="false">
+                    <button class="toggle-password" id="btn-toggle-gh-token" title="Show/hide">👁</button>
+                </div>
+            </div>
+
+            <p class="modal-note">Keys are stored locally on this machine only.</p>
+            <button class="btn-save" id="btn-save-settings">Save</button>
         </div>
     </div>
 

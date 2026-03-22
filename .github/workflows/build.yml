@@ -1,0 +1,164 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: GitInstaller-Windows
+            ext: .exe
+          - os: ubuntu-22.04
+            artifact: GitInstaller-Linux
+            ext: ""
+          - os: macos-latest
+            artifact: GitInstaller-macOS
+            ext: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgirepository1.0-dev \
+            gir1.2-webkit2-4.1 \
+            libwebkit2gtk-4.1-dev \
+            pkg-config \
+            python3-gi \
+            python3-gi-cairo \
+            gobject-introspection \
+            libcairo2-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Linux needs PyGObject installed via pip after system deps
+      - name: Install PyGObject (Linux)
+        if: runner.os == 'Linux'
+        run: pip install PyGObject
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller `
+            --name GitInstaller `
+            --onefile `
+            --windowed `
+            --icon frontend/icon.ico `
+            --add-data "frontend;frontend" `
+            --add-data "data;data" `
+            --add-data "core;core" `
+            --hidden-import webview `
+            --hidden-import clr `
+            --hidden-import pystray `
+            --hidden-import PIL `
+            --hidden-import dotenv `
+            app.py
+
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller \
+            --name GitInstaller \
+            --onefile \
+            --windowed \
+            --icon frontend/icon.png \
+            --add-data "frontend:frontend" \
+            --add-data "data:data" \
+            --add-data "core:core" \
+            --hidden-import webview \
+            --hidden-import pystray \
+            --hidden-import PIL \
+            --hidden-import dotenv \
+            app.py
+
+      - name: Build with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller \
+            --name GitInstaller \
+            --onefile \
+            --windowed \
+            --add-data "frontend:frontend" \
+            --add-data "data:data" \
+            --add-data "core:core" \
+            --hidden-import webview \
+            --hidden-import pystray \
+            --hidden-import PIL \
+            --hidden-import dotenv \
+            --hidden-import gi \
+            app.py
+
+      - name: Create bundled directory stubs
+        shell: bash
+        run: |
+          mkdir -p dist/bundled/python
+          mkdir -p dist/bundled/git
+          mkdir -p dist/bundled/node
+          touch dist/bundled/python/.gitkeep
+          touch dist/bundled/git/.gitkeep
+          touch dist/bundled/node/.gitkeep
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path dist/GitInstaller.exe, dist/bundled -DestinationPath dist/${{ matrix.artifact }}.zip
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          chmod +x GitInstaller
+          tar -czf ${{ matrix.artifact }}.tar.gz GitInstaller bundled/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}.zip
+            dist/${{ matrix.artifact }}.tar.gz
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz

@@ -1,0 +1,18 @@
+{
+    "executionEnvironments": [
+        {
+            "root": ".",
+            "extraPaths": ["."],
+            "pythonPlatform": "Windows"
+        }
+    ],
+    "venvPath": ".",
+    "venv": ".venv",
+    "pythonVersion": "3.11",
+    "pythonPlatform": "Windows",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportGeneralTypeIssues": "warning"
+}
