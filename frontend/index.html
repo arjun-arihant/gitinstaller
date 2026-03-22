@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=900, initial-scale=1.0">
+    <title>GitInstaller</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- ==================== SCREEN 1: HOME ==================== -->
+    <div id="screen-home" class="screen">
+        <div class="header">
+            <div class="header-left">
+                <h1><span class="logo-icon">📦</span> GitInstaller</h1>
+                <p class="subtitle">Install any GitHub project in one click</p>
+            </div>
+            <button class="settings-btn" id="btn-settings" title="Settings">⚙</button>
+        </div>
+
+        <!-- API Key Warning -->
+        <div id="api-warning" class="warning-banner hidden">
+            <span class="icon">⚠️</span>
+            <span>OpenRouter API key not set — open <strong>Settings</strong> to add it</span>
+        </div>
+
+        <!-- URL Input -->
+        <div class="input-group">
+            <label for="repo-url">Repository URL</label>
+            <div class="url-input-wrapper">
+                <input type="text" id="repo-url" class="url-input"
+                       placeholder="https://github.com/owner/repo"
+                       autocomplete="off" spellcheck="false">
+            </div>
+            <div id="url-error" class="input-error"></div>
+        </div>
+
+        <!-- Folder Row -->
+        <div class="folder-row">
+            <div id="install-path" class="folder-path">Loading...</div>
+            <button class="btn-secondary" id="btn-change-folder">Change</button>
+        </div>
+
+        <!-- Install Button -->
+        <button class="btn-primary" id="btn-install">Install</button>
+
+        <!-- Installed Projects -->
+        <div class="projects-section">
+            <h2>Installed Projects</h2>
+            <div id="project-list" class="project-list">
+                <div class="empty-state">No projects installed yet</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== SCREEN 2: ANALYZING ==================== -->
+    <div id="screen-analyzing" class="screen hidden">
+        <div class="analyzing-screen" id="analyzing-content">
+            <div class="spinner"></div>
+            <div class="analyzing-title">Analyzing repository...</div>
+            <div id="analyzing-subtitle" class="analyzing-subtitle">Fetching README and project files...</div>
+            <div id="analyzing-repo-name" class="analyzing-repo-name"></div>
+        </div>
+        <div class="analyzing-screen error-state" id="analyzing-error">
+            <div class="error-icon">✕</div>
+            <div id="analyzing-error-msg" class="error-message"></div>
+            <button class="btn-back" id="btn-error-back">Go Back</button>
+        </div>
+    </div>
+
+    <!-- ==================== SCREEN 3: INSTALLING ==================== -->
+    <div id="screen-installing" class="screen hidden">
+        <div class="installing-screen">
+            <div class="installing-title">Installing <span id="installing-repo-name">project</span></div>
+
+            <!-- Step List -->
+            <div id="step-list" class="step-list"></div>
+
+            <!-- Progress Bar -->
+            <div class="progress-bar-wrapper">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+
+            <!-- Terminal Output -->
+            <div id="terminal" class="terminal"></div>
+
+            <!-- Error Banner -->
+            <div id="install-error-banner" class="install-error-banner">
+                <span>⚠️</span>
+                <span id="install-error-msg"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== SCREEN 4: DONE ==================== -->
+    <div id="screen-done" class="screen hidden">
+        <div class="done-screen">
+            <div class="done-checkmark">✓</div>
+            <div class="done-title">Installation complete!</div>
+            <div class="done-subtitle"><span id="done-repo-name">project</span> is ready to use</div>
+            <div id="done-path" class="done-path" title="Click to open in Explorer"></div>
+            <div class="done-buttons">
+                <button class="btn-launch-lg" id="btn-done-launch">Launch</button>
+                <button class="btn-another" id="btn-done-another">Install Another</button>
+            </div>
+            <div id="done-notes" class="done-notes hidden"></div>
+
+            <!-- WebUI Offer -->
+            <div id="webui-offer" class="webui-offer hidden">
+                <div class="webui-offer-icon">🌐</div>
+                <div class="webui-offer-text">
+                    <div class="webui-offer-title">No web interface detected</div>
+                    <div class="webui-offer-desc">Would you like to generate a Gradio WebUI for this project?</div>
+                </div>
+                <div class="webui-offer-actions">
+                    <button class="btn-webui-build" id="btn-build-webui">Build WebUI</button>
+                    <button class="btn-webui-skip" id="btn-skip-webui">Skip</button>
+                </div>
+            </div>
+
+            <!-- WebUI Building Progress -->
+            <div id="webui-building" class="webui-building hidden">
+                <div class="spinner-sm"></div>
+                <span>Building Gradio WebUI...</span>
+            </div>
+
+            <!-- WebUI Done -->
+            <div id="webui-done" class="webui-done hidden">
+                <span class="webui-done-icon">✅</span>
+                <span>WebUI ready!</span>
+                <button class="btn-launch-webui" id="btn-launch-webui">Launch WebUI</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== SETTINGS MODAL ==================== -->
+    <div id="modal-settings" class="modal-backdrop hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" id="btn-modal-close">✕</button>
+            </div>
+            <div class="modal-field">
+                <label for="api-key-input">OpenRouter API Key</label>
+                <div class="password-wrapper">
+                    <input type="password" id="api-key-input"
+                           placeholder="sk-or-v1-..."
+                           autocomplete="off" spellcheck="false">
+                    <button class="toggle-password" id="btn-toggle-password" title="Show/hide">👁</button>
+                </div>
+            </div>
+            <p class="modal-note">Your API key is stored locally on this machine only.</p>
+            <button class="btn-save" id="btn-save-key">Save</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

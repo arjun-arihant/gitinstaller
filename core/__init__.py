@@ -1,0 +1,1 @@
+# GitInstaller Core Package
