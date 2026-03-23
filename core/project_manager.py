@@ -16,6 +16,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from core.models import InstallationPlan
 from core.paths import get_app_dir, get_data_dir
 
 logger = logging.getLogger(__name__)
@@ -286,7 +287,7 @@ def set_github_token(token: str) -> None:
 # Plan Cache
 # ---------------------------------------------------------------------------
 
-def save_plan(project_id: str, plan: dict) -> None:
+def save_plan(project_id: str, plan: InstallationPlan) -> None:
     """Cache an AI-generated installation plan to disk.
 
     Args:

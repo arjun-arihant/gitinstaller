@@ -395,6 +395,8 @@ function resetInstallUI() {
     document.getElementById('progress-bar').style.width = '0%';
     document.getElementById('install-error-banner').className = 'install-error-banner';
     document.getElementById('done-notes').classList.add('hidden');
+    document.getElementById('plan-cache-status').classList.add('hidden');
+    document.getElementById('plan-cache-status').textContent = '';
 
     document.getElementById('webui-offer').classList.add('hidden');
     document.getElementById('webui-building').classList.add('hidden');
@@ -434,6 +436,19 @@ function showPlanReview(data) {
     document.getElementById('plan-entry-point').textContent = plan.entry_point || 'N/A';
     document.getElementById('plan-size').textContent = data.size_mb ? data.size_mb + ' MB (repo only)' : 'Unknown';
     document.getElementById('plan-stars').textContent = data.stars ? '⭐ ' + formatNumber(data.stars) : 'N/A';
+
+    var cacheEl = document.getElementById('plan-cache-status');
+    if (data.has_cached) {
+        var cacheText = 'Using cached plan';
+        if (data.cached_at) {
+            cacheText += ' from ' + formatAbsoluteDate(data.cached_at);
+        }
+        cacheEl.textContent = cacheText + '. Re-analyze by deleting the cache entry in data/plans/.';
+        cacheEl.classList.remove('hidden');
+    } else {
+        cacheEl.classList.add('hidden');
+        cacheEl.textContent = '';
+    }
 
     // Render steps
     var stepList = document.getElementById('plan-step-list');
@@ -662,6 +677,10 @@ function handleOutput(event) {
 }
 
 function handleStepDone(event) {
+    if (!event.success) {
+        return;
+    }
+
     var stepEl = document.getElementById('step-' + event.step_id);
     if (stepEl) {
         stepEl.classList.remove('active');
@@ -671,6 +690,7 @@ function handleStepDone(event) {
         icon.classList.remove('running');
     }
 
+    failedStepId = null;
     stepsCompleted++;
     updateProgressBar();
 }
@@ -739,6 +759,15 @@ function updateProgressBar() {
     if (totalSteps === 0) return;
     var pct = Math.round((stepsCompleted / totalSteps) * 100);
     document.getElementById('progress-bar').style.width = pct + '%';
+}
+
+function formatAbsoluteDate(isoString) {
+    try {
+        var date = new Date(isoString);
+        return date.toLocaleString();
+    } catch (e) {
+        return isoString;
+    }
 }
 
 // ==================== Helpers ====================

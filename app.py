@@ -16,7 +16,7 @@ import os
 import re
 import threading
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import webview
 
@@ -30,12 +30,12 @@ from core.github_fetcher import (
 from core.claude_analyzer import AnalysisError, analyze_repo
 from core.executor import execute_steps
 from core.launcher_gen import generate_launcher, generate_webui_launcher
-from core.paths import get_app_dir, get_frontend_dir
+from core.models import InstallationPlan, RepoData
+from core.paths import get_frontend_dir
 from core.platform_utils import (
     is_windows,
     launch_script,
     open_folder as _open_folder_native,
-    open_url,
 )
 from core.project_manager import (
     add_project,
@@ -80,12 +80,12 @@ class API:
 
     def __init__(self) -> None:
         self._window: Any = None
-        self._current_plan: Optional[dict] = None
-        self._current_repo_data: Optional[dict] = None
-        self._current_project_dir: Optional[str] = None
-        self._current_project_id: Optional[str] = None
+        self._current_plan: InstallationPlan | None = None
+        self._current_repo_data: RepoData | None = None
+        self._current_project_dir: str | None = None
+        self._current_project_id: str | None = None
         self._cancel_event: threading.Event = threading.Event()
-        self._install_thread: Optional[threading.Thread] = None
+        self._install_thread: threading.Thread | None = None
 
     def _set_window(self, window: Any) -> None:
         """Store a reference to the pywebview window."""
@@ -140,7 +140,7 @@ class API:
         """Persist the UI theme preference."""
         _set_theme(theme)
 
-    def pick_folder(self) -> Optional[str]:
+    def pick_folder(self) -> str | None:
         """Open a native folder picker dialog.
 
         Returns:
@@ -177,11 +177,11 @@ class API:
             return {"valid": True, "owner": match.group(1), "repo": match.group(2)}
         return {"valid": False, "owner": "", "repo": ""}
 
-    def get_current_plan(self) -> Optional[dict]:
+    def get_current_plan(self) -> InstallationPlan | None:
         """Return the current installation plan, if any."""
         return self._current_plan
 
-    def get_cached_plan(self, project_id: str) -> Optional[dict]:
+    def get_cached_plan(self, project_id: str) -> dict[str, Any] | None:
         """Return a cached plan for the given project, if available.
 
         Args:
@@ -195,7 +195,7 @@ class API:
             }
         return None
 
-    def get_repo_size(self, repo_url: str) -> Optional[float]:
+    def get_repo_size(self, repo_url: str) -> float | None:
         """Fetch the repository size in MB.
 
         Args:
@@ -258,15 +258,19 @@ class API:
         cached = _load_plan(project_id)
 
         try:
-            self._push_event({"type": "stage", "stage": "analyzing"})
-            plan = analyze_repo(repo_data, api_key)
+            plan: InstallationPlan
+            if cached and isinstance(cached.get("plan"), dict):
+                logger.info("Using cached plan for %s", project_id)
+                plan = cached["plan"]
+            else:
+                self._push_event({"type": "stage", "stage": "analyzing"})
+                plan = analyze_repo(repo_data, api_key)
+                _save_plan(project_id, plan)
+
             self._current_plan = plan
 
-            # Cache the plan
-            _save_plan(project_id, plan)
-
             # Get size estimate
-            size_mb: Optional[float] = None
+            size_mb: float | None = None
             try:
                 raw_size = repo_data.get("size_kb", 0)
                 if raw_size:
@@ -320,7 +324,7 @@ class API:
 
         owner = repo_data["owner"]
         repo = repo_data["repo"]
-        clone_url = repo_data["clone_url"]
+        clone_url = repo_data.get("authenticated_clone_url", repo_data["clone_url"])
 
         try:
             self._push_event({"type": "stage", "stage": "installing"})
@@ -458,7 +462,7 @@ class API:
         self,
         install_path: str,
         resume_step: int,
-        skip_ids: Optional[set[int]],
+        skip_ids: set[int] | None,
     ) -> None:
         """Background thread: retry/skip installation from a specific step."""
         repo_data = self._current_repo_data
@@ -468,7 +472,7 @@ class API:
 
         owner = repo_data["owner"]
         repo = repo_data["repo"]
-        clone_url = repo_data["clone_url"]
+        clone_url = repo_data.get("authenticated_clone_url", repo_data["clone_url"])
 
         project_dir = os.path.join(install_path, f"{owner}-{repo}")
         self._current_project_dir = project_dir
@@ -491,7 +495,7 @@ class API:
             plan, project_dir, clone_url,
             on_output, on_step_start, on_step_done, on_error,
             cancel_event=self._cancel_event,
-            resume_from_step=resume_step if not skip_ids else None,
+            resume_from_step=resume_step,
             skip_step_ids=skip_ids,
         )
 
@@ -632,7 +636,7 @@ def _get_frontend_path() -> str:
     return os.path.join(get_frontend_dir(), "index.html")
 
 
-def _get_icon_path() -> Optional[str]:
+def _get_icon_path() -> str | None:
     """Return the absolute path to the application icon, or ``None``.
 
     Prefers ``.ico`` (required for Win32 ``LoadImageW``), falls back to ``.png``.

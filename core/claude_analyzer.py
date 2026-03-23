@@ -12,6 +12,7 @@ import logging
 
 import requests
 
+from core.models import InstallationPlan, PlanStep, RepoData
 from core.utils import strip_code_fences
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ CRITICAL RULES:
 # Internal Helpers
 # ---------------------------------------------------------------------------
 
-def _build_user_message(repo_data: dict) -> str:
+def _build_user_message(repo_data: RepoData) -> str:
     """Construct the user message from fetched repository data.
 
     Args:
@@ -89,10 +90,11 @@ def _build_user_message(repo_data: dict) -> str:
         repo_data.get("readme", "(No README found)"),
     ]
 
-    if repo_data.get("install_doc"):
+    install_doc = repo_data.get("install_doc")
+    if install_doc:
         parts.append("")
         parts.append("INSTALL.md:")
-        parts.append(repo_data["install_doc"])
+        parts.append(install_doc)
 
     for fname, content in repo_data.get("extra_files", {}).items():
         parts.append("")
@@ -148,7 +150,7 @@ def _call_openrouter(messages: list[dict[str, str]], api_key: str) -> str:
         raise AnalysisError(f"Unexpected OpenRouter response structure: {json.dumps(data)[:500]}")
 
 
-def _post_process_plan(plan: dict) -> dict:
+def _post_process_plan(plan: InstallationPlan) -> InstallationPlan:
     """Fix common AI mistakes in the generated plan.
 
     - Strips ``&&`` chains from commands (keeps only the meaningful part).
@@ -161,7 +163,7 @@ def _post_process_plan(plan: dict) -> dict:
     Returns:
         The corrected plan dict (modified in place and returned).
     """
-    steps: list[dict] = plan.get("steps", [])
+    steps = plan.get("steps", [])
 
     for step in steps:
         command = step.get("command", "")
@@ -181,7 +183,7 @@ def _post_process_plan(plan: dict) -> dict:
     if plan.get("project_type") == "python":
         has_venv = any(s.get("type") == "venv_create" for s in steps)
         if not has_venv:
-            venv_step = {
+            venv_step: PlanStep = {
                 "id": 999,
                 "type": "venv_create",
                 "description": "Create virtual environment",
@@ -205,7 +207,7 @@ def _post_process_plan(plan: dict) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
-def analyze_repo(repo_data: dict, api_key: str) -> dict:
+def analyze_repo(repo_data: RepoData, api_key: str) -> InstallationPlan:
     """Analyse fetched repository data and produce a structured installation plan.
 
     Sends the documentation to the AI model via OpenRouter, parses the JSON

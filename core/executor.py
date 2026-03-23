@@ -17,9 +17,10 @@ import shutil
 import subprocess
 import sys
 import threading
-from typing import Callable, Optional, Set
+from typing import Callable
 
-from core.paths import get_app_dir, get_bundled_dir
+from core.models import InstallationPlan
+from core.paths import get_bundled_dir
 from core.platform_utils import (
     assign_to_job,
     build_env,
@@ -112,7 +113,7 @@ def _run_single_command(
     env: dict[str, str],
     job: object | None,
     on_output: Callable[[str], None],
-    cancel_event: Optional[threading.Event] = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[int, list[str]]:
     """Run a single shell command and stream output line by line.
 
@@ -240,16 +241,16 @@ def _split_chained_commands(command: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def execute_steps(
-    plan: dict,
+    plan: InstallationPlan,
     project_dir: str,
     clone_url: str,
     on_output: Callable[[str], None],
     on_step_start: Callable[[int, str], None],
     on_step_done: Callable[[int, bool], None],
     on_error: Callable[[int, str], None],
-    cancel_event: Optional[threading.Event] = None,
-    resume_from_step: Optional[int] = None,
-    skip_step_ids: Optional[Set[int]] = None,
+    cancel_event: threading.Event | None = None,
+    resume_from_step: int | None = None,
+    skip_step_ids: set[int] | None = None,
 ) -> bool:
     """Execute installation steps sequentially.
 
@@ -268,7 +269,7 @@ def execute_steps(
     Returns:
         ``True`` if all steps succeeded, ``False`` otherwise.
     """
-    steps: list[dict] = plan.get("steps", [])
+    steps = plan.get("steps", [])
     if not steps:
         on_output("No installation steps found in the plan.\n")
         return False
@@ -360,7 +361,7 @@ def execute_steps(
 
         # --- Special handling: git_clone ---
         if step_type == "git_clone":
-            command = _fix_git_clone_command(command, project_dir)
+            command = _fix_git_clone_command(f'git clone "{clone_url}"', project_dir)
             cwd = os.path.dirname(project_dir)
             os.makedirs(cwd, exist_ok=True)
         else:

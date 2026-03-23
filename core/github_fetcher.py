@@ -13,6 +13,8 @@ import re
 
 import requests
 
+from core.models import RepoData
+
 logger = logging.getLogger(__name__)
 
 
@@ -184,7 +186,7 @@ def fetch_repo_size(repo_url: str, github_token: str | None = None) -> float | N
         return None
 
 
-def fetch_repo_data(repo_url: str, github_token: str | None = None) -> dict:
+def fetch_repo_data(repo_url: str, github_token: str | None = None) -> RepoData:
     """Fetch all documentation files needed to understand a repository's setup.
 
     Retrieves the README, INSTALL docs, dependency manifests, and other
@@ -216,10 +218,11 @@ def fetch_repo_data(repo_url: str, github_token: str | None = None) -> dict:
     clone_url = meta.get("clone_url", f"https://github.com/{owner}/{repo}.git")
     size_kb: int = meta.get("size", 0)
     stars: int = meta.get("stargazers_count", 0)
+    is_private = bool(meta.get("private"))
 
-    # For private repos with a token, embed the token in the clone URL
-    if meta.get("private") and github_token:
-        clone_url = f"https://{github_token}@github.com/{owner}/{repo}.git"
+    authenticated_clone_url = clone_url
+    if is_private and github_token:
+        authenticated_clone_url = f"https://{github_token}@github.com/{owner}/{repo}.git"
 
     # Fetch README
     readme_text = ""
@@ -269,16 +272,19 @@ def fetch_repo_data(repo_url: str, github_token: str | None = None) -> dict:
             except Exception:
                 logger.debug("Failed to fetch %s for %s/%s", matched_name, owner, repo, exc_info=True)
 
-    return {
+    repo_data: RepoData = {
         "owner": owner,
         "repo": repo,
         "description": description,
         "default_branch": default_branch,
         "primary_language": primary_language,
         "clone_url": clone_url,
+        "authenticated_clone_url": authenticated_clone_url,
         "readme": readme_text,
         "install_doc": install_doc,
         "extra_files": extra_files,
         "size_kb": size_kb,
         "stars": stars,
+        "is_private": is_private,
     }
+    return repo_data

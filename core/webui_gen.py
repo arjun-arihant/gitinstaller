@@ -10,10 +10,11 @@ import json
 import logging
 import os
 import subprocess
-from typing import Callable, Optional
+from typing import Callable
 
 import requests
 
+from core.models import InstallationPlan, RepoData
 from core.paths import get_design_spec_path
 from core.platform_utils import is_windows, get_venv_pip
 from core.utils import strip_code_fences
@@ -56,7 +57,7 @@ def _load_design_spec() -> str:
 # WebUI Detection
 # ---------------------------------------------------------------------------
 
-def detect_needs_webui(plan: dict, project_dir: str) -> bool:
+def detect_needs_webui(plan: InstallationPlan, project_dir: str) -> bool:
     """Determine whether a project would benefit from a generated Gradio WebUI.
 
     Returns ``False`` if the project already has a web interface, is a Node
@@ -133,7 +134,7 @@ demo.launch(share=False, server_name="127.0.0.1")
 {design_spec}"""
 
 
-def generate_webui_code(repo_data: dict, plan: dict, api_key: str) -> str:
+def generate_webui_code(repo_data: RepoData, plan: InstallationPlan, api_key: str) -> str:
     """Generate Gradio WebUI Python code for a project using AI.
 
     Falls back to a generic template if the AI call fails.
@@ -314,7 +315,7 @@ demo.launch(share=False, server_name="127.0.0.1")
 
 def install_gradio_in_venv(
     project_dir: str,
-    on_output: Optional[Callable[[str], None]] = None,
+    on_output: Callable[[str], None] | None = None,
 ) -> bool:
     """Install Gradio into the project's virtual environment.
 
@@ -366,10 +367,10 @@ def install_gradio_in_venv(
 
 def build_webui(
     project_dir: str,
-    repo_data: dict,
-    plan: dict,
+    repo_data: RepoData,
+    plan: InstallationPlan,
     api_key: str,
-    on_output: Optional[Callable[[str], None]] = None,
+    on_output: Callable[[str], None] | None = None,
 ) -> str:
     """Generate and install a Gradio WebUI for a project.
 
