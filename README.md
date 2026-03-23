@@ -4,7 +4,7 @@
 
 # GitInstaller
 
-**The easiest way to run AI-generated web interfaces for any open-source project.**
+**Turn any GitHub repo into a one-click desktop app — no terminal required.**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -12,100 +12,154 @@
 
 </div>
 
-GitInstaller bridges the gap between complex open-source repositories and non-technical users. It automatically clones repositories, analyzes their architecture using an OpenRouter-hosted model, sets up necessary virtual environments, installs dependencies, and generates a fully functional **Gradio Web UI** tailored exactly to that project's specific needs.
+GitInstaller is a standalone desktop application that lets anyone install and run open-source projects from GitHub — without ever opening a terminal. It uses AI to analyze a repository, generate a step-by-step installation plan, create an isolated environment, install all dependencies, and optionally build a Gradio Web UI so you can interact with the project through your browser.
 
-## 🚀 Quick Start
+Everything runs locally. Git, Python, and Node.js are bundled directly into the executable, so there is nothing else to install.
 
-Get running in less than 5 minutes.
+---
 
-### 1. Download the App
-Download the latest standalone executable for your operating system (Windows, macOS, or Linux) from the [Releases page](https://github.com/arjun-arihant/gitinstaller/releases).
+## Download
 
-### 2. Configure API Keys
-When you launch the app for the first time, you'll need to provide an **OpenRouter API Key** (for repository analysis and WebUI generation) and a **GitHub Personal Access Token** (for fetching private repositories and avoiding rate limits). GitInstaller keeps the GitHub token local and does not include it in AI prompts.
+Go to the [**Releases**](https://github.com/arjun-arihant/gitinstaller/releases) page and download the file for your operating system:
 
-### 3. Install a Project
-1. Paste a GitHub URL (e.g., `https://github.com/user/repo`).
+| OS | File | Notes |
+|---|---|---|
+| Windows | `GitInstaller-Windows.exe` | Double-click to run |
+| macOS | `GitInstaller-macOS` | See [macOS instructions](#macos-unsigned-app) below |
+| Linux | `GitInstaller-Linux` | `chmod +x` then run |
+
+### macOS Unsigned App
+
+macOS blocks applications from unidentified developers by default. To run GitInstaller:
+
+1. Download `GitInstaller-macOS` from the Releases page.
+2. Open **Terminal** and navigate to where you downloaded the file:
+   ```bash
+   cd ~/Downloads
+   ```
+3. Remove the quarantine attribute and make it executable:
+   ```bash
+   xattr -cr GitInstaller-macOS
+   chmod +x GitInstaller-macOS
+   ```
+4. Run the app:
+   ```bash
+   ./GitInstaller-macOS
+   ```
+
+Alternatively, if you try to open it by double-clicking and see *"GitInstaller-macOS cannot be opened because it is from an unidentified developer"*, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
+
+---
+
+## Getting Started
+
+### 1. Set Up API Keys
+
+On first launch, open **Settings** and add:
+
+- **OpenRouter API Key** — required for AI-powered repository analysis and WebUI generation. Get one at [openrouter.ai](https://openrouter.ai/).
+- **GitHub Token** *(optional)* — needed for private repositories and to avoid GitHub API rate limits. Generate one at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo` scope.
+
+> Your GitHub token is stored locally and is **never** sent to the AI model.
+
+### 2. Install a Project
+
+1. Paste a GitHub URL (e.g. `https://github.com/user/repo`) or shorthand (`user/repo`).
 2. Click **Install to GitInstaller**.
-3. Review the AI-generated execution plan. You can edit, retry, or skip steps as needed.
-4. Click **Start Execution**. Grab a coffee while GitInstaller handles cloning, environments, and dependencies.
-5. Once complete, click **Launch WebUI** to interact with the project!
+3. Review the AI-generated installation plan — edit, skip, or reorder steps if needed.
+4. Click **Start Execution**. GitInstaller clones the repo, creates an isolated environment, and installs all dependencies.
+5. Once complete, click **Launch** or **Launch WebUI** to start the project.
 
 ---
 
-## ✨ Key Features
+## How It Works
 
-- **🧠 AI-Assisted Installation Plans**: Uses the configured OpenRouter model to understand undocumented repos and produce executable installation plans.
-- **🌐 Auto-Generated Web UIs**: Generates standard Python Gradio interfaces for projects that do not already expose a web experience.
-- **⚡ Portable Architecture**: Create isolated virtual environments for every project. Optionally drop portable `python/`, `node/`, and `git/` folders into `bundled/` to avoid polluting your system.
-- **🎨 Universal Theming**: All generated Web UIs strictly follow the `data/design.md` visual guidelines for a cohesive, branded experience.
-- **🔄 Interactive Planning**: Review, modify, or cancel the AI's step-by-step installation plan before running it.
-- **💾 Real Plan Caching**: Reuses cached plans from `data/plans/` to avoid repeated model calls and speed up reinstalls.
-- **🍎 Cross-Platform**: Natively runs on Windows, macOS, and Linux with full system tray integration.
-- **🔒 Private Repo Support**: Seamlessly clone and analyze private GitHub repositories.
+```
+GitHub URL → Fetch Repo Data → AI Analysis → Installation Plan → Review & Approve → Execute → Launch
+```
+
+1. **Fetch** — Pulls repository metadata, README, and config files from the GitHub API.
+2. **Analyze** — Sends the repo structure to an OpenRouter-hosted model that generates a tailored installation plan (clone, create venv, install deps, configure env, etc.).
+3. **Review** — You see every step before anything runs. Edit commands, skip steps, or re-analyze.
+4. **Execute** — Runs each step in sequence using the bundled runtimes — no system dependencies needed.
+5. **WebUI** — For Python projects without a web interface, GitInstaller generates a Gradio UI so you can interact with the project from your browser.
 
 ---
 
-## 🛠 Developer Guide
+## Features
 
-Are you an AI agent or a developer looking to contribute to GitInstaller? Here are the rules of the road.
+- **Zero dependencies** — Git, Python, and Node.js are bundled into the executable. Nothing else to install.
+- **AI-powered plans** — Understands undocumented repos and produces correct, executable installation steps.
+- **Plan review** — Inspect, edit, skip, or cancel steps before and during execution.
+- **Auto-generated Web UIs** — Creates Gradio interfaces for Python projects that lack a web frontend.
+- **Private repo support** — Clone and analyze private GitHub repositories with a personal access token.
+- **Isolated environments** — Each project gets its own virtual environment — no system pollution.
+- **Plan caching** — Reuses cached plans to save API calls and speed up reinstalls.
+- **Cross-platform** — Runs on Windows, macOS, and Linux with native look and feel.
+- **System tray** — Minimize to tray and keep the app running in the background.
+- **Theming** — All generated Web UIs follow the `data/design.md` visual spec for consistent styling.
 
-### Core Commands
+---
 
-Make sure you have Python 3.11+ installed.
+## Development
+
+### Prerequisites
+
+- Python 3.11+
+- [pyright](https://github.com/microsoft/pyright) for type checking
+
+### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/arjun-arihant/gitinstaller.git
 cd gitinstaller
-
-# Create virtual environment and install dependencies
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-# Run the application locally
+### Run
+
+```bash
 python app.py
 ```
 
-### Type Checking & Linting
-
-We enforce type checking across the codebase.
+### Type Check
 
 ```bash
-# Run the pyright type checker (configured in pyrightconfig.json)
 pyright
 ```
 
-### Building the Executables
+### Build
 
-We use PyInstaller to build cross-platform binaries. This is fully automated via GitHub Actions on every tag push (see `.github/workflows/build.yml`). If you need to build locally, look at the exact pyinstaller flags used in the workflow file.
-
----
-
-## 🏗 Architecture & Patterns
-
-When modifying the codebase, adhere to these project-specific structural patterns (documented in `AGENTS.md`):
-
-### Theming System
-- **`data/design.md`**: This is the drop-in replaceable design spec. All generated Gradio WebUIs pull their theme values from here. Swap this file out to instantly change the appearance of all future generated interfaces.
-
-### State & Caching
-- **AI Plan Caching**: Project plans are cached in the `data/plans/` directory to save API costs. Cached plans are reused automatically. Delete a plan file to force re-analysis.
-- **App State Files**: User configurations and the installed project registry are stored locally in `data/config.json` and `data/projects.json` (these are `.gitignore`d).
-
-### Runtimes
-- **Bundled Runtimes**: To make GitInstaller fully portable, you can place portable runtime binaries in `bundled/python/`, `bundled/git/`, and `bundled/node/`. The app will automatically prefer these over system PATH bins.
-
-### Core Modules
-- **`app.py`**: The main entry point. Exposes a Python API to JavaScript via `pywebview`.
-- **`core/models.py`**: Shared `TypedDict` structures for repository data and AI-generated plans.
-- **`core/platform_utils.py`**: Handles cross-platform abstractions (OS detection, appropriate script generation `.bat` vs `.sh`, venv pathing).
-- **`core/executor.py`**: Manages subprocess execution. On Windows, it binds spawned child processes to job objects to ensure proper process tree termination.
-- **Custom Exceptions**: Always use the defined domain exceptions (e.g., `RepoNotFoundError`, `GitHubRateLimitError`) rather than generic exceptions.
+Cross-platform executables are built automatically via GitHub Actions on every tag push (`v*`). See [`.github/workflows/build.yml`](.github/workflows/build.yml) for the full PyInstaller configuration.
 
 ---
 
-## 📄 License
+## Project Structure
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+```
+app.py                  # Entry point — pywebview API exposed to frontend
+core/
+├── models.py           # TypedDict definitions (InstallationPlan, RepoData, PlanStep)
+├── paths.py            # Path resolution for dev and PyInstaller frozen builds
+├── platform_utils.py   # Cross-platform abstractions (OS detection, job objects, env)
+├── executor.py         # Step-by-step subprocess execution with cancel/retry/skip
+├── github_fetcher.py   # GitHub API client (repo metadata, README, file contents)
+├── claude_analyzer.py  # AI analysis via OpenRouter (plan generation)
+├── project_manager.py  # Persistent state (projects.json, config.json, plan cache)
+├── launcher_gen.py     # Launch script generator (.bat / .sh)
+├── webui_gen.py        # Gradio WebUI generator with design.md theming
+└── utils.py            # Shared utilities
+frontend/               # HTML / CSS / JS served by pywebview
+data/
+├── design.md           # WebUI visual design spec (drop-in replaceable)
+└── plans/              # Cached AI-generated installation plans
+bundled/                # Portable runtimes (python/, node/, git/) — auto-detected
+```
+
+---
+
+## License
+
+[MIT](LICENSE)
