@@ -81,9 +81,18 @@ def get_frontend_dir() -> str:
 
 
 def get_bundled_dir() -> str:
-    """Return the ``bundled/`` directory where portable runtimes may be placed.
+    """Return the ``bundled/`` directory for portable runtimes.
 
-    Always resolves relative to ``get_app_dir()`` (next to the executable),
-    since users place runtimes there after installation.
+    Checks embedded location first (sys._MEIPASS), then falls back to
+    external location (next to executable). This allows runtimes to be
+    either bundled into the .exe or placed in a folder next to it.
+
+    Returns:
+        Path to the bundled/ directory.
     """
+    # First check if bundled runtimes are embedded in the executable
+    embedded = os.path.join(get_resource_dir(), "bundled")
+    if os.path.isdir(embedded):
+        return embedded
+    # Fall back to external location (next to executable)
     return os.path.join(get_app_dir(), "bundled")
