@@ -18,8 +18,16 @@ import signal
 import subprocess
 import sys
 import webbrowser
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
+
+
+class PopenKwargs(TypedDict, total=False):
+    """Platform-specific keyword arguments accepted by ``subprocess.Popen``."""
+
+    creationflags: int
+    process_group: int
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +220,7 @@ def kill_process_tree(proc: subprocess.Popen[str] | None) -> None:
                 capture_output=True, timeout=5,
             )
         else:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            os.kill(-proc.pid, signal.SIGTERM)
     except Exception:
         try:
             proc.kill()
@@ -227,14 +235,14 @@ def get_subprocess_flags() -> int:
     return 0
 
 
-def get_popen_kwargs() -> dict[str, object]:
+def get_popen_kwargs() -> PopenKwargs:
     """Return platform-specific keyword arguments for ``subprocess.Popen``.
 
     On Windows: sets ``creationflags`` to ``CREATE_NEW_PROCESS_GROUP``.
     On Unix: sets ``process_group=0`` to create a new process group
     (preferred over the deprecated ``preexec_fn=os.setsid``).
     """
-    kwargs: dict[str, object] = {}
+    kwargs: PopenKwargs = {}
     if is_windows():
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:

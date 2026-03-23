@@ -125,6 +125,8 @@ html, body {
 .screen.slide-left { animation-name: screenSlideLeft; }
 .screen.slide-right { animation-name: screenSlideRight; }
 
+.hidden { display: none !important; }
+
 /* ---------- Typography ---------- */
 h1 {
     font-size: 26px;
@@ -604,6 +606,16 @@ h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
     align-items: center;
     justify-content: space-between;
     margin-bottom: 20px;
+}
+
+.plan-cache-status {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    background: var(--blue-info-bg);
+    border: 1px solid rgba(96, 165, 250, 0.24);
+    color: var(--blue-info);
+    font-size: 13px;
 }
 
 .plan-review-title {

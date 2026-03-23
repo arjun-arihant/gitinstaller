@@ -12,7 +12,7 @@
 
 </div>
 
-GitInstaller bridges the gap between complex open-source repositories and non-technical users. It automatically clones repositories, analyzes their architecture using Claude AI, sets up necessary virtual environments, installs dependencies, and generates a fully functional **Gradio Web UI** tailored exactly to that project's specific needs.
+GitInstaller bridges the gap between complex open-source repositories and non-technical users. It automatically clones repositories, analyzes their architecture using an OpenRouter-hosted model, sets up necessary virtual environments, installs dependencies, and generates a fully functional **Gradio Web UI** tailored exactly to that project's specific needs.
 
 ## 🚀 Quick Start
 
@@ -22,7 +22,7 @@ Get running in less than 5 minutes.
 Download the latest standalone executable for your operating system (Windows, macOS, or Linux) from the [Releases page](https://github.com/arjun-arihant/gitinstaller/releases).
 
 ### 2. Configure API Keys
-When you launch the app for the first time, you'll need to provide an **OpenRouter API Key** (for Claude 3.5 Sonnet analysis) and a **GitHub Personal Access Token** (for fetching private repositories and avoiding rate limits).
+When you launch the app for the first time, you'll need to provide an **OpenRouter API Key** (for repository analysis and WebUI generation) and a **GitHub Personal Access Token** (for fetching private repositories and avoiding rate limits). GitInstaller keeps the GitHub token local and does not include it in AI prompts.
 
 ### 3. Install a Project
 1. Paste a GitHub URL (e.g., `https://github.com/user/repo`).
@@ -35,10 +35,12 @@ When you launch the app for the first time, you'll need to provide an **OpenRout
 
 ## ✨ Key Features
 
-- **🧠 Auto-Generated Web UIs**: Uses Claude 3.5 Sonnet to understand undocumented repos and generate standard Python Gradio interfaces.
+- **🧠 AI-Assisted Installation Plans**: Uses the configured OpenRouter model to understand undocumented repos and produce executable installation plans.
+- **🌐 Auto-Generated Web UIs**: Generates standard Python Gradio interfaces for projects that do not already expose a web experience.
 - **⚡ Portable Architecture**: Create isolated virtual environments for every project. Optionally drop portable `python/`, `node/`, and `git/` folders into `bundled/` to avoid polluting your system.
 - **🎨 Universal Theming**: All generated Web UIs strictly follow the `data/design.md` visual guidelines for a cohesive, branded experience.
 - **🔄 Interactive Planning**: Review, modify, or cancel the AI's step-by-step installation plan before running it.
+- **💾 Real Plan Caching**: Reuses cached plans from `data/plans/` to avoid repeated model calls and speed up reinstalls.
 - **🍎 Cross-Platform**: Natively runs on Windows, macOS, and Linux with full system tray integration.
 - **🔒 Private Repo Support**: Seamlessly clone and analyze private GitHub repositories.
 
@@ -68,7 +70,7 @@ python app.py
 
 ### Type Checking & Linting
 
-We enforce strict type checking across the codebase.
+We enforce type checking across the codebase.
 
 ```bash
 # Run the pyright type checker (configured in pyrightconfig.json)
@@ -89,7 +91,7 @@ When modifying the codebase, adhere to these project-specific structural pattern
 - **`data/design.md`**: This is the drop-in replaceable design spec. All generated Gradio WebUIs pull their theme values from here. Swap this file out to instantly change the appearance of all future generated interfaces.
 
 ### State & Caching
-- **AI Plan Caching**: Project plans are cached in the `data/plans/` directory to save API costs. Delete a plan file to force re-analysis.
+- **AI Plan Caching**: Project plans are cached in the `data/plans/` directory to save API costs. Cached plans are reused automatically. Delete a plan file to force re-analysis.
 - **App State Files**: User configurations and the installed project registry are stored locally in `data/config.json` and `data/projects.json` (these are `.gitignore`d).
 
 ### Runtimes
@@ -97,6 +99,7 @@ When modifying the codebase, adhere to these project-specific structural pattern
 
 ### Core Modules
 - **`app.py`**: The main entry point. Exposes a Python API to JavaScript via `pywebview`.
+- **`core/models.py`**: Shared `TypedDict` structures for repository data and AI-generated plans.
 - **`core/platform_utils.py`**: Handles cross-platform abstractions (OS detection, appropriate script generation `.bat` vs `.sh`, venv pathing).
 - **`core/executor.py`**: Manages subprocess execution. On Windows, it binds spawned child processes to job objects to ensure proper process tree termination.
 - **Custom Exceptions**: Always use the defined domain exceptions (e.g., `RepoNotFoundError`, `GitHubRateLimitError`) rather than generic exceptions.

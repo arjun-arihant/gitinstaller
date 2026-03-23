@@ -13,6 +13,19 @@ Modules:
     utils           — Shared utility functions
 """
 
+from . import (
+    claude_analyzer,
+    executor,
+    github_fetcher,
+    launcher_gen,
+    models,
+    paths,
+    platform_utils,
+    project_manager,
+    utils,
+    webui_gen,
+)
+
 __all__ = [
     "paths",
     "platform_utils",
@@ -23,4 +36,5 @@ __all__ = [
     "webui_gen",
     "project_manager",
     "utils",
+    "models",
 ]

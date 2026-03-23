@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import stat
 
+from core.models import InstallationPlan
 from core.platform_utils import get_script_extension, get_venv_scripts_dir, is_windows
 
 
@@ -50,7 +51,7 @@ def _make_executable(path: str) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
-def generate_launcher(project_dir: str, plan: dict) -> str:
+def generate_launcher(project_dir: str, plan: InstallationPlan) -> str:
     """Generate a launch script for an installed project.
 
     Creates a ``.bat`` or ``.sh`` script in the project directory that
@@ -77,10 +78,17 @@ echo Starting {repo_name}...
 {launch_command}
 pause
 """
-        else:
+        elif project_type == "python":
             content = f"""@echo off
 cd /d "%~dp0"
 call .venv\\Scripts\\activate.bat 2>nul
+echo Starting {repo_name}...
+{launch_command}
+pause
+"""
+        else:
+            content = f"""@echo off
+cd /d "%~dp0"
 echo Starting {repo_name}...
 {launch_command}
 pause
@@ -92,10 +100,16 @@ cd "$(dirname "$0")"
 echo "Starting {repo_name}..."
 {launch_command}
 """
-        else:
+        elif project_type == "python":
             content = f"""#!/bin/bash
 cd "$(dirname "$0")"
 source .venv/bin/activate 2>/dev/null
+echo "Starting {repo_name}..."
+{launch_command}
+"""
+        else:
+            content = f"""#!/bin/bash
+cd "$(dirname "$0")"
 echo "Starting {repo_name}..."
 {launch_command}
 """
