@@ -111,6 +111,7 @@ jobs:
           curl -L -o python.tar.gz "$PYTHON_URL"
           tar -xf python.tar.gz -C bundled/python --strip-components=1
           rm -f python.tar.gz
+          rm -rf bundled/python/lib/pkgconfig
 
           echo "Downloading Node.js..."
           if [ "$RUNNER_OS" = "Windows" ]; then
