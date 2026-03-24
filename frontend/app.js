@@ -63,11 +63,7 @@ function bindEvents() {
     document.getElementById('btn-toggle-password').addEventListener('click', function () {
         togglePasswordField('api-key-input', this);
     });
-    document.getElementById('btn-toggle-gh-token').addEventListener('click', function () {
-        togglePasswordField('github-token-input', this);
-    });
 
-    // Theme toggle
     document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
 
     // Folder picker
@@ -262,12 +258,6 @@ async function toggleTheme() {
 // ==================== Settings Modal ====================
 function openSettings() {
     document.getElementById('modal-settings').classList.remove('hidden');
-    pyApi().get_api_key().then(function (key) {
-        document.getElementById('api-key-input').value = key || '';
-    });
-    pyApi().get_github_token().then(function (token) {
-        document.getElementById('github-token-input').value = token || '';
-    });
 }
 
 function closeSettings() {
@@ -276,9 +266,7 @@ function closeSettings() {
 
 async function saveSettings() {
     var apiKey = document.getElementById('api-key-input').value.trim();
-    var ghToken = document.getElementById('github-token-input').value.trim();
     await pyApi().set_api_key(apiKey);
-    await pyApi().set_github_token(ghToken);
     toggleApiWarning(!apiKey);
     closeSettings();
 }
@@ -674,12 +662,16 @@ function skipStep() {
 }
 
 // ==================== Install Event Handler ====================
-window.onInstallEvent = function (eventJson) {
+window.onInstallEvent = function (base64Event) {
     var event;
     try {
+        var text = atob(base64Event);
+        var bytes = new Uint8Array(text.length);
+        for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+        var eventJson = new TextDecoder('utf-8').decode(bytes);
         event = JSON.parse(eventJson);
     } catch (e) {
-        console.error('Failed to parse event:', eventJson, e);
+        console.error('Failed to parse event:', base64Event, e);
         return;
     }
 

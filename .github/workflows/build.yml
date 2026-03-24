@@ -57,7 +57,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip setuptools wheel
-          pip install pyinstaller
+          pip install -r requirements-build.txt
 
       - name: Install app dependencies (Windows)
         if: runner.os == 'Windows'
@@ -148,11 +148,18 @@ jobs:
           SEP=":"
           ICON_FLAG=""
           EXTRA_IMPORTS=""
+          VC_BINARIES=""
 
           if [ "$RUNNER_OS" = "Windows" ]; then
             SEP=";"
             ICON_FLAG="--icon frontend/icon.ico"
             EXTRA_IMPORTS="--hidden-import clr"
+            if [ -f "C:/Windows/System32/vcruntime140.dll" ]; then
+              VC_BINARIES="--add-binary C:/Windows/System32/vcruntime140.dll${SEP}."
+            fi
+            if [ -f "C:/Windows/System32/msvcp140.dll" ]; then
+              VC_BINARIES="$VC_BINARIES --add-binary C:/Windows/System32/msvcp140.dll${SEP}."
+            fi
           fi
 
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -171,13 +178,14 @@ jobs:
 
           pyinstaller \
             --name GitInstaller \
-            --onefile \
+            --onedir \
             --windowed \
             $ICON_FLAG \
             --add-data "frontend${SEP}frontend" \
             --add-data "data${SEP}data" \
             --add-data "core${SEP}core" \
             $BUNDLED_FLAG \
+            $VC_BINARIES \
             --hidden-import webview \
             --hidden-import pystray \
             --hidden-import PIL \
@@ -203,29 +211,39 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
-          cp dist/GitInstaller.exe "staging/${{ matrix.artifact }}.exe"
+          mv dist/GitInstaller "staging/${{ matrix.artifact }}"
+          cd staging
+          zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
 
       - name: Stage executable (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           mkdir -p staging
-          cp dist/GitInstaller "staging/${{ matrix.artifact }}"
-          chmod +x "staging/${{ matrix.artifact }}"
+          if [ -d "dist/GitInstaller.app" ]; then
+              mv dist/GitInstaller.app "staging/${{ matrix.artifact }}.app"
+              cd staging
+              zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}.app"
+          else
+              mv dist/GitInstaller "staging/${{ matrix.artifact }}"
+              cd staging
+              zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+          fi
 
       - name: Stage executable (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p staging
-          cp dist/GitInstaller "staging/${{ matrix.artifact }}"
-          chmod +x "staging/${{ matrix.artifact }}"
+          mv dist/GitInstaller "staging/${{ matrix.artifact }}"
+          cd staging
+          tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: staging/${{ matrix.artifact }}*
+          path: staging/*.*
 
   release:
     needs: build

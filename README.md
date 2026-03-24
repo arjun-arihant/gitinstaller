@@ -20,31 +20,30 @@ Everything runs locally. Git, Python, and Node.js are bundled directly into the 
 
 ## Download
 
-Go to the [**Releases**](https://github.com/arjun-arihant/gitinstaller/releases) page and download the file for your operating system:
+Go to the [**Releases**](https://github.com/arjun-arihant/gitinstaller/releases) page and download the archive for your operating system:
 
 | OS | File | Notes |
 |---|---|---|
-| Windows | `GitInstaller-Windows.exe` | Double-click to run |
-| macOS | `GitInstaller-macOS` | See [macOS instructions](#macos-unsigned-app) below |
-| Linux | `GitInstaller-Linux` | `chmod +x` then run |
+| Windows | `GitInstaller-Windows.zip` | Extract folder and run `GitInstaller.exe` |
+| macOS | `GitInstaller-macOS.zip` | Extract and see [macOS instructions](#macos-unsigned-app) below |
+| Linux | `GitInstaller-Linux.tar.gz` | Extract, `chmod +x GitInstaller`, then run |
 
 ### macOS Unsigned App
 
 macOS blocks applications from unidentified developers by default. To run GitInstaller:
 
-1. Download `GitInstaller-macOS` from the Releases page.
-2. Open **Terminal** and navigate to where you downloaded the file:
+1. Download `GitInstaller-macOS.zip` from the Releases page and extract it.
+2. Open **Terminal** and navigate to where you extracted the app (`GitInstaller-macOS.app`):
    ```bash
    cd ~/Downloads
    ```
 3. Remove the quarantine attribute and make it executable:
    ```bash
-   xattr -cr GitInstaller-macOS
-   chmod +x GitInstaller-macOS
+   xattr -cr GitInstaller-macOS.app
    ```
 4. Run the app:
    ```bash
-   ./GitInstaller-macOS
+   open GitInstaller-macOS.app
    ```
 
 Alternatively, if you try to open it by double-clicking and see *"GitInstaller-macOS cannot be opened because it is from an unidentified developer"*, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.

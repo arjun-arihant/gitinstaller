@@ -18,8 +18,8 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Architecture
 
-- **`app.py`** exposes a Python API to JavaScript via `pywebview`. The `API` class methods are callable from the frontend (install, update, uninstall, etc.). Configures `logging` at startup.
-- **`core/paths.py`** centralises all path resolution. Handles both development mode and PyInstaller `--onefile` frozen builds using `sys._MEIPASS` for read-only resources and the executable's directory for writable state.
+- **`app.py`** exposes a Python API to JavaScript via `pywebview`. The `API` class methods are callable from the frontend (install, update, uninstall, etc.). Handles Windows WebView2 auto-bootstrapping and secure Base64 event transport. Configures `logging` at startup.
+- **`core/paths.py`** centralises all path resolution. Handles both development mode and PyInstaller `--onedir` frozen builds using `sys._MEIPASS` for read-only resources and the executable's directory for writable state.
 - **`core/platform_utils.py`** handles cross-platform abstractions (Windows/macOS/Linux detection, script extensions `.bat`/`.sh`, venv paths).
 - **`core/project_manager.py`** manages thread-safe persistent state with atomic file writes for projects and configuration.
 - **`core/executor.py`** manages subprocess execution with job objects on Windows for proper process tree termination.
@@ -30,7 +30,7 @@ This file provides guidance to agents when working with code in this repository.
 ## Path Resolution (Frozen vs Development)
 
 All modules use `core/paths.py` for path resolution:
-- **`get_app_dir()`** → executable's directory (frozen) or project root (dev)
+- **`get_app_dir()`** → executable's directory (frozen `--onedir`) or project root (dev)
 - **`get_resource_dir()`** → `sys._MEIPASS` (frozen) or project root (dev) — for read-only bundled resources
 - **`get_data_dir()`** → writable `data/` directory next to the executable
 - **`get_bundled_dir()`** → `bundled/` directory next to the executable

@@ -20,7 +20,12 @@ import threading
 from typing import Callable
 
 from core.models import InstallationPlan
-from core.paths import get_bundled_dir
+from core.paths import (
+    get_bundled_dir,
+    get_bundled_git_path,
+    get_bundled_node_path,
+    get_bundled_python_path,
+)
 from core.platform_utils import (
     assign_to_job,
     build_env,
@@ -32,94 +37,6 @@ from core.platform_utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Bundled Runtime Discovery
-# ---------------------------------------------------------------------------
-
-def _get_bundled_python() -> str:
-    """Locate the bundled Python executable, falling back to system Python.
-
-    Returns:
-        Absolute path to a usable Python interpreter.
-
-    Raises:
-        RuntimeError: If no Python interpreter can be found in a frozen build.
-    """
-    bundled_dir = get_bundled_dir()
-    if is_windows():
-        bundled = os.path.join(bundled_dir, "python", "python.exe")
-    else:
-        bundled = os.path.join(bundled_dir, "python", "bin", "python3")
-
-    if os.path.isfile(bundled):
-        return bundled
-
-    logger.warning("Bundled Python not found at %s, using system Python", bundled)
-
-    if getattr(sys, "frozen", False):
-        sys_python = shutil.which("python3") or shutil.which("python")
-        if sys_python:
-            return sys_python
-        raise RuntimeError(
-            "Bundled Python not found, and system Python not found in PATH!"
-        )
-    return sys.executable
-
-
-def _get_bundled_git_dir() -> str:
-    """Locate the bundled Git directory containing the ``git`` executable.
-
-    On Windows, MinGit places ``git.exe`` in the ``cmd/`` subdirectory rather
-    than ``bin/``.  The function checks platform-appropriate paths.
-
-    Returns:
-        Absolute path to the bundled Git executable directory, or empty string
-        if not found.
-    """
-    git_base = os.path.join(get_bundled_dir(), "git")
-
-    if is_windows():
-        # MinGit uses cmd/ for the main git.exe
-        candidates = [
-            os.path.join(git_base, "cmd"),
-            os.path.join(git_base, "mingw64", "bin"),
-            os.path.join(git_base, "bin"),
-        ]
-    else:
-        candidates = [
-            os.path.join(git_base, "bin"),
-        ]
-
-    for candidate in candidates:
-        if os.path.isdir(candidate):
-            return candidate
-
-    logger.warning("Bundled Git not found under %s, using system Git", git_base)
-    return ""
-
-
-def _get_bundled_node_dir() -> str:
-    """Locate the bundled Node.js directory, falling back to system Node.
-
-    Returns:
-        Absolute path to a Node.js directory, or empty string if not found.
-    """
-    bundled_dir = get_bundled_dir()
-    if is_windows():
-        bundled = os.path.join(bundled_dir, "node")
-    else:
-        bundled = os.path.join(bundled_dir, "node", "bin")
-
-    if os.path.isdir(bundled):
-        return bundled
-
-    # Fall back to system node
-    node_path = shutil.which("node")
-    if node_path:
-        return os.path.dirname(node_path)
-    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +213,9 @@ def execute_steps(
     skip_step_ids = skip_step_ids or set()
     job = create_job_object()
 
-    bundled_python_dir = os.path.dirname(_get_bundled_python())
-    bundled_git_dir = _get_bundled_git_dir()
-    bundled_node_dir = _get_bundled_node_dir()
+    bundled_python_dir = os.path.dirname(get_bundled_python_path())
+    bundled_git_dir = get_bundled_git_path()
+    bundled_node_dir = get_bundled_node_path()
 
     # MinGit on Windows also needs mingw64/bin/ and mingw64/libexec/git-core/
     extra_git_dirs: list[str] = []
@@ -379,7 +296,7 @@ def execute_steps(
 
         # --- Special handling: venv_create ---
         if step_type == "venv_create":
-            python_exe = _get_bundled_python()
+            python_exe = get_bundled_python_path()
             venv_path = os.path.join(project_dir, ".venv")
             on_output(f'$ "{python_exe}" -m venv ".venv"\n')
             try:

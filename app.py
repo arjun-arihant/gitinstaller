@@ -10,6 +10,7 @@ plan caching, size estimation, uninstall, update (git pull), version info.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -99,15 +100,11 @@ class API:
         self._window = window
 
     def _push_event(self, event: dict) -> None:
-        """Push an event to the frontend via JavaScript evaluation.
-
-        Args:
-            event: Event dict to serialise and send.
-        """
+        """Push an event to the frontend via JavaScript evaluation."""
         if self._window:
             event_json = json.dumps(event, ensure_ascii=False)
-            event_json_escaped = event_json.replace("\\", "\\\\").replace("'", "\\'")
-            self._window.evaluate_js(f"window.onInstallEvent('{event_json_escaped}')")
+            b64 = base64.b64encode(event_json.encode("utf-8")).decode("ascii")
+            self._window.evaluate_js(f"window.onInstallEvent('{b64}')")
 
     # --- App Info ---
 
@@ -137,13 +134,7 @@ class API:
         """Persist the OpenRouter API key."""
         _set_api_key(key)
 
-    def get_github_token(self) -> str:
-        """Return the GitHub personal access token."""
-        return _get_github_token()
 
-    def set_github_token(self, token: str) -> None:
-        """Persist the GitHub personal access token."""
-        _set_github_token(token)
 
     def get_theme(self) -> str:
         """Return the current UI theme name."""
@@ -708,13 +699,12 @@ class API:
         self._push_event({"type": "update_start", "project_id": project_id})
 
         try:
-            from core.executor import _get_bundled_git_dir, _get_bundled_node_dir, _get_bundled_python
+            from core.paths import get_bundled_dir, get_bundled_git_path, get_bundled_node_path, get_bundled_python_path
             from core.platform_utils import build_env, is_windows
-            from core.paths import get_bundled_dir
 
-            bundled_python_dir = os.path.dirname(_get_bundled_python())
-            bundled_git_dir = _get_bundled_git_dir()
-            bundled_node_dir = _get_bundled_node_dir()
+            bundled_python_dir = os.path.dirname(get_bundled_python_path())
+            bundled_git_dir = get_bundled_git_path()
+            bundled_node_dir = get_bundled_node_path()
 
             extra_git_dirs: list[str] = []
             if bundled_git_dir and is_windows():
@@ -866,10 +856,8 @@ if __name__ == "__main__":
     except ImportError:
         logger.debug("pystray not installed, skipping system tray")
 
-    def _set_window_icon_on_shown() -> None:
-        """Set the window icon via Win32 API after the window is created."""
-        import time
-        time.sleep(0.5)  # Wait for window HWND to be available
+    def _on_window_shown() -> None:
+        """Set the window icon via Win32 API after the window is shown."""
         try:
             if not is_windows() or not icon_path:
                 return
@@ -898,10 +886,71 @@ if __name__ == "__main__":
             logger.debug("Failed to set window icon", exc_info=True)
 
     if icon_path:
-        icon_thread = threading.Thread(target=_set_window_icon_on_shown, daemon=True)
-        icon_thread.start()
+        window.events.shown += _on_window_shown
 
-    webview.start(debug=False)
+    def ensure_webview2_installed() -> None:
+        if not is_windows():
+            return
+
+        from core.paths import get_data_dir
+        flag_path = os.path.join(get_data_dir(), "webview2_installed.flag")
+        if os.path.isfile(flag_path):
+            return
+
+        import winreg
+        installed = False
+        keys = [
+            r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+        ]
+        for key in keys:
+            for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(hive, key):
+                        installed = True
+                        break
+                except FileNotFoundError:
+                    pass
+            if installed:
+                break
+
+        if installed:
+            with open(flag_path, "w") as f:
+                f.write("1")
+            return
+
+        import ctypes
+        MB_ICONINFORMATION = 0x40
+        MB_OK = 0x0
+        msg = (
+            "Microsoft Edge WebView2 Runtime is required, but it is not installed on this system.\n\n"
+            "GitInstaller will now download and install it automatically (~2MB bootstrapper).\n"
+            "Please wait a moment while this completes."
+        )
+        ctypes.windll.user32.MessageBoxW(0, msg, "GitInstaller - Setup", MB_OK | MB_ICONINFORMATION)
+
+        import urllib.request
+        import tempfile
+        
+        url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+        try:
+            bootstrapper_path = os.path.join(tempfile.gettempdir(), "MicrosoftEdgeWebview2Setup.exe")
+            urllib.request.urlretrieve(url, bootstrapper_path)
+            
+            proc = subprocess.run([bootstrapper_path, "/silent", "/install"], capture_output=True)
+            if proc.returncode != 0:
+                raise RuntimeError(f"Installer exit code {proc.returncode}")
+                
+            with open(flag_path, "w") as f:
+                f.write("1")
+        except Exception as e:
+            MB_ICONERROR = 0x10
+            ctypes.windll.user32.MessageBoxW(0, f"Failed to install WebView2 Runtime.\n\nError: {e}\n\nPlease install it manually to use GitInstaller.", "GitInstaller - Error", MB_OK | MB_ICONERROR)
+            import sys
+            sys.exit(1)
+
+    ensure_webview2_installed()
+    webview.start(debug=False, http_server=True)
 
     # Cleanup tray on exit
     if tray_icon:

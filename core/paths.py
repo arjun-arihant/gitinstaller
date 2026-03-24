@@ -10,8 +10,12 @@ In PyInstaller --onefile mode:
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def is_frozen() -> bool:
@@ -96,3 +100,82 @@ def get_bundled_dir() -> str:
         return embedded
     # Fall back to external location (next to executable)
     return os.path.join(get_app_dir(), "bundled")
+
+
+def get_bundled_python_path() -> str:
+    """Locate the bundled Python executable, falling back to system Python.
+
+    Returns:
+        Absolute path to a usable Python interpreter.
+
+    Raises:
+        RuntimeError: If no Python interpreter can be found in a frozen build.
+    """
+    bundled_dir = get_bundled_dir()
+    if sys.platform == "win32":
+        bundled = os.path.join(bundled_dir, "python", "python.exe")
+    else:
+        bundled = os.path.join(bundled_dir, "python", "bin", "python3")
+
+    if os.path.isfile(bundled):
+        return bundled
+
+    logger.warning("Bundled Python not found at %s, using system Python", bundled)
+
+    if getattr(sys, "frozen", False):
+        sys_python = shutil.which("python3") or shutil.which("python")
+        if sys_python:
+            return sys_python
+        raise RuntimeError("Bundled Python not found, and system Python not found in PATH!")
+    return sys.executable
+
+
+def get_bundled_git_path() -> str:
+    """Locate the bundled Git directory containing the ``git`` executable.
+
+    Returns:
+        Absolute path to the bundled Git executable directory, or empty string
+        if not found.
+    """
+    git_base = os.path.join(get_bundled_dir(), "git")
+
+    if sys.platform == "win32":
+        # MinGit uses cmd/ for the main git.exe
+        candidates = [
+            os.path.join(git_base, "cmd"),
+            os.path.join(git_base, "mingw64", "bin"),
+            os.path.join(git_base, "bin"),
+        ]
+    else:
+        candidates = [
+            os.path.join(git_base, "bin"),
+        ]
+
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+
+    logger.warning("Bundled Git not found under %s, using system Git", git_base)
+    return ""
+
+
+def get_bundled_node_path() -> str:
+    """Locate the bundled Node.js directory, falling back to system Node.
+
+    Returns:
+        Absolute path to a Node.js directory, or empty string if not found.
+    """
+    bundled_dir = get_bundled_dir()
+    if sys.platform == "win32":
+        bundled = os.path.join(bundled_dir, "node")
+    else:
+        bundled = os.path.join(bundled_dir, "node", "bin")
+
+    if os.path.isdir(bundled):
+        return bundled
+
+    # Fall back to system node
+    node_path = shutil.which("node")
+    if node_path:
+        return os.path.dirname(node_path)
+    return ""
