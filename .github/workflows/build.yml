@@ -249,7 +249,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: staging/*.*
+          path: |
+            staging/*.zip
+            staging/*.tar.gz
 
   release:
     needs: build
@@ -282,4 +284,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_CHANGELOG.md
-          files: artifacts/**/*
+          files: |
+            artifacts/*/*.zip
+            artifacts/*/*.tar.gz
