@@ -220,6 +220,7 @@ jobs:
           mv dist/GitInstaller "staging/${{ matrix.artifact }}"
           cd staging
           python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}')"
+          rm -rf "${{ matrix.artifact }}"
 
       - name: Stage executable (macOS)
         if: runner.os == 'macOS'
@@ -230,10 +231,12 @@ jobs:
               mv dist/GitInstaller.app "staging/${{ matrix.artifact }}.app"
               cd staging
               python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}.app')"
+              rm -rf "${{ matrix.artifact }}.app"
           else
               mv dist/GitInstaller "staging/${{ matrix.artifact }}"
               cd staging
               python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}')"
+              rm -rf "${{ matrix.artifact }}"
           fi
 
       - name: Stage executable (Linux)
@@ -244,14 +247,13 @@ jobs:
           mv dist/GitInstaller "staging/${{ matrix.artifact }}"
           cd staging
           tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}"
+          rm -rf "${{ matrix.artifact }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            staging/*.zip
-            staging/*.tar.gz
+          path: staging/*.*
 
   release:
     needs: build
@@ -284,6 +286,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_CHANGELOG.md
-          files: |
-            artifacts/*/*.zip
-            artifacts/*/*.tar.gz
+          files: artifacts/**/*
