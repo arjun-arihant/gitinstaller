@@ -69,6 +69,7 @@ On first launch, open **Settings** and add:
 3. Review the AI-generated installation plan — edit, skip, or reorder steps if needed.
 4. Click **Start Execution**. GitInstaller clones the repo, creates an isolated environment, and installs all dependencies.
 5. Once complete, click **Launch** or **Launch WebUI** to start the project.
+6. Manage installed projects from the list — launch, open folder, update (`git pull`), or uninstall.
 
 ---
 
@@ -91,10 +92,12 @@ GitHub URL → Fetch Repo Data → AI Analysis → Installation Plan → Review 
 - **Zero dependencies** — Git, Python, and Node.js are bundled into the executable. Nothing else to install.
 - **AI-powered plans** — Understands undocumented repos and produces correct, executable installation steps.
 - **Plan review** — Inspect, edit, skip, or cancel steps before and during execution.
+- **Project management** — Easily uninstall projects or update them to the latest version (`git pull`).
 - **Auto-generated Web UIs** — Creates Gradio interfaces for Python projects that lack a web frontend.
 - **Private repo support** — Clone and analyze private GitHub repositories with a personal access token.
 - **Isolated environments** — Each project gets its own virtual environment — no system pollution.
-- **Plan caching** — Reuses cached plans to save API calls and speed up reinstalls.
+- **Plan caching & Progress** — Reuses cached plans to save API calls, and saves progress so installs can be resumed.
+- **Robust execution** — Terminal auto-scroll pinning and confirmation dialogs for safe operations.
 - **Cross-platform** — Runs on Windows, macOS, and Linux with native look and feel.
 - **System tray** — Minimize to tray and keep the app running in the background.
 - **Theming** — All generated Web UIs follow the `data/design.md` visual spec for consistent styling.
@@ -146,11 +149,12 @@ core/
 ├── platform_utils.py   # Cross-platform abstractions (OS detection, job objects, env)
 ├── executor.py         # Step-by-step subprocess execution with cancel/retry/skip
 ├── github_fetcher.py   # GitHub API client (repo metadata, README, file contents)
-├── claude_analyzer.py  # AI analysis via OpenRouter (plan generation)
-├── project_manager.py  # Persistent state (projects.json, config.json, plan cache)
+├── claude_analyzer.py  # AI analysis via OpenRouter + strict schema validation
+├── project_manager.py  # Thread-safe persistent state (atomic file writes)
 ├── launcher_gen.py     # Launch script generator (.bat / .sh)
 ├── webui_gen.py        # Gradio WebUI generator with design.md theming
-└── utils.py            # Shared utilities
+├── utils.py            # Shared utils (e.g. GitHub URL parsing)
+└── version.py          # Centralized application version
 frontend/               # HTML / CSS / JS served by pywebview
 data/
 ├── design.md           # WebUI visual design spec (drop-in replaceable)

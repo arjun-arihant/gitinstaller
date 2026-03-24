@@ -18,11 +18,13 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Architecture
 
-- **`app.py`** exposes a Python API to JavaScript via `pywebview`. The `API` class methods are callable from the frontend. Configures `logging` at startup.
+- **`app.py`** exposes a Python API to JavaScript via `pywebview`. The `API` class methods are callable from the frontend (install, update, uninstall, etc.). Configures `logging` at startup.
 - **`core/paths.py`** centralises all path resolution. Handles both development mode and PyInstaller `--onefile` frozen builds using `sys._MEIPASS` for read-only resources and the executable's directory for writable state.
 - **`core/platform_utils.py`** handles cross-platform abstractions (Windows/macOS/Linux detection, script extensions `.bat`/`.sh`, venv paths).
+- **`core/project_manager.py`** manages thread-safe persistent state with atomic file writes for projects and configuration.
 - **`core/executor.py`** manages subprocess execution with job objects on Windows for proper process tree termination.
-- **`core/utils.py`** contains shared utility functions (e.g. `strip_code_fences`) used across multiple modules.
+- **`core/utils.py`** contains shared utility functions (e.g. `strip_code_fences`, GitHub URL parsing) used across multiple modules.
+- **`core/version.py`** acts as the centralized single source of truth for the application version.
 - **Generated WebUIs** use Gradio with theme values from `data/design.md`.
 
 ## Path Resolution (Frozen vs Development)
