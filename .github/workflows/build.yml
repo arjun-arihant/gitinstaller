@@ -112,6 +112,8 @@ jobs:
           tar -xf python.tar.gz -C bundled/python --strip-components=1
           rm -f python.tar.gz
           rm -rf bundled/python/lib/pkgconfig
+          rm -rf bundled/python/share
+          rm -rf bundled/python/include
 
           echo "Downloading Node.js..."
           if [ "$RUNNER_OS" = "Windows" ]; then
@@ -134,6 +136,9 @@ jobs:
             tar -xf node.tar.xz -C bundled/node --strip-components=1
             rm -f node.tar.xz
           fi
+          
+          rm -rf bundled/node/share
+          rm -rf bundled/node/include
 
           if [ "$RUNNER_OS" = "Windows" ]; then
             echo "Downloading MinGit (Windows only)..."
