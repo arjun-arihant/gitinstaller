@@ -213,7 +213,7 @@ jobs:
           mkdir -p staging
           mv dist/GitInstaller "staging/${{ matrix.artifact }}"
           cd staging
-          zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+          python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}')"
 
       - name: Stage executable (macOS)
         if: runner.os == 'macOS'
@@ -223,11 +223,11 @@ jobs:
           if [ -d "dist/GitInstaller.app" ]; then
               mv dist/GitInstaller.app "staging/${{ matrix.artifact }}.app"
               cd staging
-              zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}.app"
+              python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}.app')"
           else
               mv dist/GitInstaller "staging/${{ matrix.artifact }}"
               cd staging
-              zip -q -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+              python -c "import shutil; shutil.make_archive('${{ matrix.artifact }}', 'zip', '.', '${{ matrix.artifact }}')"
           fi
 
       - name: Stage executable (Linux)
