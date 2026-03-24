@@ -336,6 +336,36 @@ def install_gradio_in_venv(
         on_output(f"$ {cmd}\n")
 
     try:
+        from core.executor import _get_bundled_git_dir, _get_bundled_node_dir, _get_bundled_python
+        from core.platform_utils import build_env
+        from core.paths import get_bundled_dir
+
+        bundled_python_dir = os.path.dirname(_get_bundled_python())
+        bundled_git_dir = _get_bundled_git_dir()
+        bundled_node_dir = _get_bundled_node_dir()
+
+        extra_git_dirs: list[str] = []
+        if bundled_git_dir and is_windows():
+            git_base = os.path.join(get_bundled_dir(), "git")
+            for sub in ("mingw64\\bin", "mingw64\\libexec\\git-core", "usr\\bin"):
+                candidate = os.path.join(git_base, sub)
+                if os.path.isdir(candidate) and candidate != bundled_git_dir:
+                    extra_git_dirs.append(candidate)
+
+        env = build_env(project_dir, bundled_python_dir, bundled_git_dir, bundled_node_dir)
+
+        if extra_git_dirs:
+            sep = ";" if is_windows() else ":"
+            current_path = env.get("PATH", "")
+            git_extras = sep.join(extra_git_dirs)
+            if bundled_git_dir and bundled_git_dir in current_path:
+                env["PATH"] = current_path.replace(
+                    bundled_git_dir,
+                    f"{bundled_git_dir}{sep}{git_extras}",
+                )
+            else:
+                env["PATH"] = f"{git_extras}{sep}{current_path}"
+
         proc = subprocess.Popen(
             cmd,
             cwd=project_dir,
@@ -344,6 +374,7 @@ def install_gradio_in_venv(
             text=True,
             bufsize=1,
             shell=True,
+            env=env,
         )
 
         for line in proc.stdout:  # type: ignore[union-attr]
