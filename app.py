@@ -5,7 +5,7 @@ Exposes a Python API to JavaScript via ``pywebview``. The ``API`` class methods
 are callable from the frontend as ``window.pywebview.api.<method>()``.
 
 Features: Plan review, cancel, retry/skip, system tray, theme, private repos,
-plan caching, size estimation.
+plan caching, size estimation, uninstall, update (git pull), version info.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 import threading
 from datetime import datetime
 from typing import Any
@@ -39,6 +41,8 @@ from core.platform_utils import (
 )
 from core.project_manager import (
     add_project,
+    clear_plan,
+    clear_progress,
     get_all_projects,
     get_api_key as _get_api_key,
     get_github_token as _get_github_token,
@@ -47,6 +51,7 @@ from core.project_manager import (
     load_plan as _load_plan,
     remove_project as _remove_project,
     save_plan as _save_plan,
+    save_progress as _save_progress,
     set_api_key as _set_api_key,
     set_github_token as _set_github_token,
     set_install_path as _set_install_path,
@@ -54,6 +59,8 @@ from core.project_manager import (
     update_project_field,
     update_project_status,
 )
+from core.utils import parse_github_url
+from core.version import __version__
 from core.webui_gen import build_webui, detect_needs_webui
 
 # ---------------------------------------------------------------------------
@@ -101,6 +108,12 @@ class API:
             event_json = json.dumps(event, ensure_ascii=False)
             event_json_escaped = event_json.replace("\\", "\\\\").replace("'", "\\'")
             self._window.evaluate_js(f"window.onInstallEvent('{event_json_escaped}')")
+
+    # --- App Info ---
+
+    def get_version(self) -> str:
+        """Return the application version string."""
+        return __version__
 
     # --- Project Management ---
 
@@ -165,17 +178,8 @@ class API:
         Returns:
             Dict with ``valid``, ``owner``, and ``repo`` keys.
         """
-        url = url.strip()
-        # Accept shorthand owner/repo
-        shorthand = re.match(r"^([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$", url)
-        if shorthand:
-            return {"valid": True, "owner": shorthand.group(1), "repo": shorthand.group(2)}
-
-        pattern = r"(?:https?://)?github\.com/([^/]+)/([^/.]+?)(?:\.git)?(?:/.*)?$"
-        match = re.match(pattern, url)
-        if match:
-            return {"valid": True, "owner": match.group(1), "repo": match.group(2)}
-        return {"valid": False, "owner": "", "repo": ""}
+        valid, owner, repo = parse_github_url(url)
+        return {"valid": valid, "owner": owner, "repo": repo}
 
     def get_current_plan(self) -> InstallationPlan | None:
         """Return the current installation plan, if any."""
@@ -236,18 +240,15 @@ class API:
             self._push_event({"type": "stage", "stage": "fetching"})
             repo_data = fetch_repo_data(repo_url, github_token)
             self._current_repo_data = repo_data
-        except RepoNotFoundError as exc:
-            self._push_event({"type": "stage", "stage": "error", "message": str(exc)})
-            return
-        except GitHubRateLimitError as exc:
-            self._push_event({"type": "stage", "stage": "error", "message": str(exc)})
-            return
-        except NetworkError as exc:
+        except (RepoNotFoundError, GitHubRateLimitError, NetworkError) as exc:
             self._push_event({"type": "stage", "stage": "error", "message": str(exc)})
             return
         except Exception as exc:
             logger.error("Unexpected error fetching repo: %s", exc, exc_info=True)
-            self._push_event({"type": "stage", "stage": "error", "message": f"Error fetching repo: {exc}"})
+            self._push_event({
+                "type": "stage", "stage": "error",
+                "message": f"Error fetching repo: {exc}",
+            })
             return
 
         owner = repo_data["owner"]
@@ -295,7 +296,10 @@ class API:
             return
         except Exception as exc:
             logger.error("AI analysis failed: %s", exc, exc_info=True)
-            self._push_event({"type": "stage", "stage": "error", "message": f"AI analysis failed: {exc}"})
+            self._push_event({
+                "type": "stage", "stage": "error",
+                "message": f"AI analysis failed: {exc}",
+            })
             return
 
     def approve_and_install(self, install_path: str) -> None:
@@ -325,6 +329,7 @@ class API:
         owner = repo_data["owner"]
         repo = repo_data["repo"]
         clone_url = repo_data.get("authenticated_clone_url", repo_data["clone_url"])
+        project_id = f"{owner}-{repo}"
 
         try:
             self._push_event({"type": "stage", "stage": "installing"})
@@ -346,6 +351,8 @@ class API:
                 })
 
             def on_step_done(step_id: int, success: bool) -> None:
+                if success:
+                    _save_progress(project_id, step_id)
                 self._push_event({
                     "type": "step_done",
                     "step_id": step_id,
@@ -373,7 +380,6 @@ class API:
             launch_file = generate_launcher(project_dir, plan)
 
             # Register project
-            project_id = f"{owner}-{repo}"
             self._current_project_id = project_id
             project_metadata = {
                 "id": project_id,
@@ -389,6 +395,10 @@ class API:
             }
             add_project(project_metadata)
             _set_install_path(install_path)
+
+            # Clear progress on successful completion
+            if success:
+                clear_progress(project_id)
 
             # Check if WebUI needed
             needs_webui = detect_needs_webui(plan, project_dir)
@@ -473,6 +483,7 @@ class API:
         owner = repo_data["owner"]
         repo = repo_data["repo"]
         clone_url = repo_data.get("authenticated_clone_url", repo_data["clone_url"])
+        project_id = f"{owner}-{repo}"
 
         project_dir = os.path.join(install_path, f"{owner}-{repo}")
         self._current_project_dir = project_dir
@@ -484,6 +495,8 @@ class API:
             self._push_event({"type": "step_start", "step_id": step_id, "description": description})
 
         def on_step_done(step_id: int, success: bool) -> None:
+            if success:
+                _save_progress(project_id, step_id)
             self._push_event({"type": "step_done", "step_id": step_id, "success": success})
 
         def on_error(step_id: int, error: str) -> None:
@@ -504,10 +517,12 @@ class API:
             return
 
         launch_file = generate_launcher(project_dir, plan)
-        project_id = f"{owner}-{repo}"
         self._current_project_id = project_id
         update_project_status(project_id, "installed" if success else "partial")
         update_project_field(project_id, "launch_file", launch_file)
+
+        if success:
+            clear_progress(project_id)
 
         needs_webui = detect_needs_webui(plan, project_dir)
 
@@ -626,6 +641,114 @@ class API:
         """
         _remove_project(project_id)
 
+    def uninstall_project(self, project_id: str, delete_files: bool = False) -> dict:
+        """Uninstall a project, optionally deleting its files from disk.
+
+        Args:
+            project_id: The project identifier.
+            delete_files: If ``True``, delete the project directory from disk.
+
+        Returns:
+            Dict with ``success`` (bool) and optional ``error`` (str) keys.
+        """
+        projects = get_all_projects()
+        project_dir: str | None = None
+        for p in projects:
+            if p.get("id") == project_id:
+                project_dir = p.get("project_dir")
+                break
+
+        if delete_files and project_dir and os.path.isdir(project_dir):
+            try:
+                shutil.rmtree(project_dir)
+                logger.info("Deleted project directory: %s", project_dir)
+            except Exception as exc:
+                logger.error("Failed to delete project directory %s: %s", project_dir, exc, exc_info=True)
+                return {"success": False, "error": str(exc)}
+
+        _remove_project(project_id)
+        clear_plan(project_id)
+        clear_progress(project_id)
+        return {"success": True}
+
+    def update_project(self, project_id: str) -> None:
+        """Pull the latest changes for an installed project via ``git pull``.
+
+        Streams output to the frontend via ``update_output`` events and
+        emits an ``update_done`` event when complete.
+
+        Args:
+            project_id: The project identifier.
+        """
+        projects = get_all_projects()
+        project_dir: str | None = None
+        for p in projects:
+            if p.get("id") == project_id:
+                project_dir = p.get("project_dir")
+                break
+
+        if not project_dir or not os.path.isdir(project_dir):
+            self._push_event({
+                "type": "update_done",
+                "project_id": project_id,
+                "success": False,
+                "error": "Project directory not found.",
+            })
+            return
+
+        thread = threading.Thread(
+            target=self._update_pipeline,
+            args=(project_id, project_dir),
+            daemon=True,
+        )
+        thread.start()
+
+    def _update_pipeline(self, project_id: str, project_dir: str) -> None:
+        """Background thread: run ``git pull`` and stream output."""
+        self._push_event({"type": "update_start", "project_id": project_id})
+
+        try:
+            proc = subprocess.Popen(
+                ["git", "pull"],
+                cwd=project_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            for line in proc.stdout:  # type: ignore[union-attr]
+                self._push_event({"type": "update_output", "line": line.rstrip("\n\r")})
+
+            proc.wait()
+            success = proc.returncode == 0
+
+            if success:
+                update_project_field(project_id, "updated_at", datetime.now().isoformat())
+
+            self._push_event({
+                "type": "update_done",
+                "project_id": project_id,
+                "success": success,
+                "error": None if success else f"git pull exited with code {proc.returncode}",
+            })
+
+        except FileNotFoundError:
+            self._push_event({
+                "type": "update_done",
+                "project_id": project_id,
+                "success": False,
+                "error": "git not found in PATH. Ensure bundled git is available.",
+            })
+        except Exception as exc:
+            logger.error("Update pipeline error for %s: %s", project_id, exc, exc_info=True)
+            self._push_event({
+                "type": "update_done",
+                "project_id": project_id,
+                "success": False,
+                "error": str(exc),
+            })
+
 
 # ---------------------------------------------------------------------------
 # Frontend / Icon Path Resolution
@@ -658,7 +781,7 @@ if __name__ == "__main__":
 
     icon_path = _get_icon_path()
     window_kwargs: dict[str, Any] = {
-        "title": "GitInstaller",
+        "title": f"GitInstaller v{__version__}",
         "url": _get_frontend_path(),
         "js_api": api,
         "width": 960,
@@ -722,21 +845,15 @@ if __name__ == "__main__":
             import ctypes
             user32 = ctypes.windll.user32  # type: ignore[attr-defined]
 
-            # Find the window by title
-            hwnd = user32.FindWindowW(None, "GitInstaller")
+            hwnd = user32.FindWindowW(None, f"GitInstaller v{__version__}")
             if not hwnd:
                 return
 
             IMAGE_ICON = 1
             LR_LOADFROMFILE = 0x0010
 
-            # Load the icon from file
-            hicon_big = user32.LoadImageW(
-                0, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE,
-            )
-            hicon_small = user32.LoadImageW(
-                0, icon_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE,
-            )
+            hicon_big = user32.LoadImageW(0, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+            hicon_small = user32.LoadImageW(0, icon_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
 
             WM_SETICON = 0x0080
             ICON_BIG = 1

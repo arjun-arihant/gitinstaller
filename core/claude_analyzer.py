@@ -150,6 +150,45 @@ def _call_openrouter(messages: list[dict[str, str]], api_key: str) -> str:
         raise AnalysisError(f"Unexpected OpenRouter response structure: {json.dumps(data)[:500]}")
 
 
+def _validate_plan(data: dict) -> None:
+    """Validate that a parsed plan dict has the required structure.
+
+    Args:
+        data: Raw dict parsed from the AI JSON response.
+
+    Raises:
+        AnalysisError: If required fields are missing or have wrong types.
+    """
+    if not isinstance(data.get("steps"), list):
+        raise AnalysisError(
+            f"Invalid plan: 'steps' must be a list, got "
+            f"{type(data.get('steps')).__name__}. Parsed: {json.dumps(data)[:300]}"
+        )
+    if not data.get("steps"):
+        raise AnalysisError("Invalid plan: 'steps' list is empty — the AI produced no installation steps.")
+
+    valid_types = {"python", "node", "unknown"}
+    project_type = data.get("project_type", "")
+    if project_type not in valid_types:
+        logger.warning("Unexpected project_type '%s', defaulting to 'unknown'", project_type)
+        data["project_type"] = "unknown"
+
+    if "launch_command" not in data:
+        data["launch_command"] = ""
+
+    for i, step in enumerate(data.get("steps", [])):
+        if not isinstance(step, dict):
+            raise AnalysisError(f"Invalid plan: step {i} is not a dict: {step!r}")
+        if "id" not in step:
+            step["id"] = i + 1
+        if "description" not in step:
+            step["description"] = f"Step {step['id']}"
+        if "command" not in step:
+            step["command"] = ""
+        if "type" not in step:
+            step["type"] = "custom"
+
+
 def _post_process_plan(plan: InstallationPlan) -> InstallationPlan:
     """Fix common AI mistakes in the generated plan.
 
@@ -261,11 +300,8 @@ def analyze_repo(repo_data: RepoData, api_key: str) -> InstallationPlan:
                 f"Raw response: {retry_text[:500]}"
             )
 
-    if not isinstance(plan.get("steps"), list):
-        raise AnalysisError(
-            f"Invalid plan structure — 'steps' is not a list. "
-            f"Parsed: {json.dumps(plan)[:500]}"
-        )
+    # Validate and normalise the parsed plan
+    _validate_plan(plan)
 
     # Post-process to fix common AI mistakes
     plan = _post_process_plan(plan)

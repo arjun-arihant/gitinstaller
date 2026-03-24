@@ -20,16 +20,16 @@
                     </svg>
                     GitInstaller
                 </h1>
-                <p class="subtitle">Install any GitHub project in one click</p>
+                <p class="subtitle">Install any GitHub project in one click &mdash; <span id="app-version" class="version-badge"></span></p>
             </div>
             <div class="header-actions">
-                <button class="icon-btn" id="btn-theme-toggle" title="Toggle theme">🌙</button>
-                <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
+                <button class="icon-btn" id="btn-theme-toggle" title="Toggle theme" aria-label="Toggle dark/light theme">🌙</button>
+                <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Open settings">⚙</button>
             </div>
         </div>
 
         <!-- API Key Warning -->
-        <div id="api-warning" class="warning-banner hidden">
+        <div id="api-warning" class="warning-banner hidden" role="alert">
             <span class="icon">⚠️</span>
             <span>OpenRouter API key not set — open <strong>Settings</strong> to add it</span>
         </div>
@@ -43,7 +43,7 @@
                        autocomplete="off" spellcheck="false">
                 <div id="repo-preview" class="repo-preview hidden"></div>
             </div>
-            <div id="url-error" class="input-error"></div>
+            <div id="url-error" class="input-error" role="alert"></div>
         </div>
 
         <!-- Folder Row -->
@@ -139,30 +139,33 @@
         <div class="installing-screen">
             <div class="installing-header">
                 <div class="installing-title">Installing <span id="installing-repo-name">project</span></div>
-                <button class="btn-cancel" id="btn-cancel-install">Cancel</button>
+                <button class="btn-cancel" id="btn-cancel-install" aria-label="Cancel installation">Cancel</button>
             </div>
 
             <!-- Step List -->
             <div id="step-list" class="step-list"></div>
 
             <!-- Progress Bar -->
-            <div class="progress-bar-wrapper">
+            <div class="progress-bar-wrapper" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Installation progress">
                 <div id="progress-bar" class="progress-bar"></div>
             </div>
 
             <!-- Terminal Output -->
             <div class="terminal-wrapper">
                 <div class="terminal-header">
-                    <button class="terminal-toggle" id="btn-toggle-terminal">
+                    <button class="terminal-toggle" id="btn-toggle-terminal" aria-label="Toggle terminal output">
                         <span id="terminal-toggle-icon">▼</span> Terminal Output
                     </button>
-                    <button class="btn-copy-log" id="btn-copy-log" title="Copy log">📋 Copy</button>
+                    <div class="terminal-header-right">
+                        <button class="btn-scroll-bottom hidden" id="btn-scroll-bottom" aria-label="Scroll to bottom of terminal">⬇ Live</button>
+                        <button class="btn-copy-log" id="btn-copy-log" aria-label="Copy terminal log">📋 Copy</button>
+                    </div>
                 </div>
                 <div id="terminal" class="terminal"></div>
             </div>
 
             <!-- Error Banner with Retry/Skip -->
-            <div id="install-error-banner" class="install-error-banner">
+            <div id="install-error-banner" class="install-error-banner" role="alert">
                 <div class="error-banner-content">
                     <span>⚠️</span>
                     <span id="install-error-msg"></span>
@@ -181,7 +184,7 @@
             <div class="done-checkmark">✓</div>
             <div class="done-title">Installation complete!</div>
             <div class="done-subtitle"><span id="done-repo-name">project</span> is ready to use</div>
-            <div id="done-path" class="done-path" title="Click to open in Explorer"></div>
+            <div id="done-path" class="done-path" title="Click to open in Explorer" role="button" tabindex="0"></div>
             <div class="done-buttons">
                 <button class="btn-launch-lg" id="btn-done-launch">Launch</button>
                 <button class="btn-another" id="btn-done-another">Install Another</button>
@@ -226,12 +229,27 @@
         </div>
     </div>
 
+    <!-- ==================== CONFIRM DIALOG ==================== -->
+    <div id="modal-confirm" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal modal-sm">
+            <div class="confirm-icon" id="confirm-icon">⚠️</div>
+            <div class="modal-header">
+                <h2 id="confirm-title">Confirm</h2>
+            </div>
+            <p id="confirm-message" class="confirm-message"></p>
+            <div class="confirm-actions">
+                <button class="btn-save btn-confirm-ok" id="btn-confirm-ok">Confirm</button>
+                <button class="btn-another btn-confirm-cancel" id="btn-confirm-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ==================== SETTINGS MODAL ==================== -->
-    <div id="modal-settings" class="modal-backdrop hidden">
+    <div id="modal-settings" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="modal">
             <div class="modal-header">
-                <h2>Settings</h2>
-                <button class="modal-close" id="btn-modal-close">✕</button>
+                <h2 id="settings-title">Settings</h2>
+                <button class="modal-close" id="btn-modal-close" aria-label="Close settings">✕</button>
             </div>
 
             <!-- OpenRouter API Key -->
@@ -241,7 +259,7 @@
                     <input type="password" id="api-key-input"
                            placeholder="sk-or-v1-..."
                            autocomplete="off" spellcheck="false">
-                    <button class="toggle-password" id="btn-toggle-password" title="Show/hide">👁</button>
+                    <button class="toggle-password" id="btn-toggle-password" aria-label="Show or hide API key">👁</button>
                 </div>
             </div>
 
@@ -252,7 +270,7 @@
                     <input type="password" id="github-token-input"
                            placeholder="ghp_..."
                            autocomplete="off" spellcheck="false">
-                    <button class="toggle-password" id="btn-toggle-gh-token" title="Show/hide">👁</button>
+                    <button class="toggle-password" id="btn-toggle-gh-token" aria-label="Show or hide GitHub token">👁</button>
                 </div>
             </div>
 

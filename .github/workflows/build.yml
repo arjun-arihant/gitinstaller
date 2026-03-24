@@ -192,6 +192,7 @@ jobs:
             --hidden-import core.launcher_gen \
             --hidden-import core.webui_gen \
             --hidden-import core.project_manager \
+            --hidden-import core.version \
             $EXTRA_IMPORTS \
             app.py
 
@@ -232,6 +233,22 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: kenji-miyake/setup-git-cliff@v2
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Generate changelog for the latest tag only
+          git cliff --latest --strip header > RELEASE_CHANGELOG.md
+          echo "Generated changelog:"
+          cat RELEASE_CHANGELOG.md
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -240,5 +257,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: RELEASE_CHANGELOG.md
           files: artifacts/**/*

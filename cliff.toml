@@ -1,0 +1,47 @@
+# git-cliff configuration — https://git-cliff.org
+# Generates a changelog from git commit history on every tagged release.
+# Follows Conventional Commits (https://www.conventionalcommits.org/)
+
+[changelog]
+header = """
+# Changelog\n
+All notable changes to GitInstaller are documented here.
+Format follows [Conventional Commits](https://www.conventionalcommits.org/).\n
+"""
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] — {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}\
+{{ commit.message | upper_first }}\
+{% if commit.breaking %} ⚠️ **BREAKING**{% endif %} \
+([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/arjun-arihant/gitinstaller/commit/{{ commit.id }}))\
+{% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false   # include non-conventional commits too
+commit_parsers = [
+    { message = "^feat",     group = "✨ Features"        },
+    { message = "^fix",      group = "🐛 Bug Fixes"       },
+    { message = "^refactor", group = "♻️ Refactoring"     },
+    { message = "^perf",     group = "⚡ Performance"     },
+    { message = "^docs",     group = "📝 Documentation"   },
+    { message = "^test",     group = "🧪 Tests"           },
+    { message = "^ci",       group = "⚙️ CI/CD"           },
+    { message = "^chore",    group = "🔧 Miscellaneous"   },
+    { message = "^Merge",    skip = true                  },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+# Sort commits so newest show first within each group
+sort_commits = "newest"

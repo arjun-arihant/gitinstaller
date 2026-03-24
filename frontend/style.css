@@ -1371,3 +1371,127 @@ h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 
 /* ---------- Utility ---------- */
 .hidden { display: none !important; }
+
+/* ---------- Version Badge ---------- */
+.version-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1px 8px;
+    letter-spacing: 0.02em;
+}
+
+/* ---------- Install Button Loading State ---------- */
+.btn-primary:disabled,
+.btn-primary.btn-loading {
+    opacity: 0.65;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* ---------- Update Button ---------- */
+.btn-update {
+    padding: 5px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.btn-update:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ---------- Terminal Scroll-to-Bottom Badge ---------- */
+.terminal-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-scroll-bottom {
+    padding: 3px 10px;
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.btn-scroll-bottom:hover { opacity: 0.85; animation: none; }
+
+/* ---------- Confirm / Uninstall Dialog ---------- */
+.modal-sm {
+    width: 380px;
+    text-align: center;
+}
+
+.confirm-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+}
+
+.confirm-message {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    line-height: 1.6;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-confirm-ok {
+    flex: 1;
+}
+
+.btn-confirm-cancel {
+    flex: 1;
+    padding: 10px 24px;
+    font-size: 14px;
+}
+
+/* ---------- Toast Notification ---------- */
+.gi-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--text-primary);
+    box-shadow: var(--shadow-lg);
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.gi-toast.gi-toast-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.gi-toast.gi-toast-error {
+    border-color: rgba(248, 113, 113, 0.4);
+    color: var(--red);
+}
+

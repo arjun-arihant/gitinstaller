@@ -1,6 +1,7 @@
 /**
  * GitInstaller — app.js
- * Frontend logic: screens, API bridge, plan review, cancel, search, themes, drag-drop, shortcuts
+ * Frontend logic: screens, API bridge, plan review, cancel, search, themes,
+ * drag-drop, shortcuts, terminal scroll pinning, uninstall, update, accessibility.
  */
 
 // ==================== State ====================
@@ -11,6 +12,8 @@ let stepsCompleted = 0;
 let totalSteps = 0;
 let failedStepId = null;
 let terminalCollapsed = false;
+let terminalPinned = true;  // true = auto-scroll to bottom
+let isInstalling = false;   // true while install is in progress
 
 // ==================== DOM Ready ====================
 window.addEventListener('pywebviewready', function () {
@@ -28,6 +31,13 @@ async function initApp() {
         // Load theme
         const theme = await pyApi().get_theme();
         applyTheme(theme || 'dark');
+
+        // Display version
+        try {
+            const version = await pyApi().get_version();
+            const versionEl = document.getElementById('app-version');
+            if (versionEl && version) versionEl.textContent = 'v' + version;
+        } catch (_) { /* version endpoint optional */ }
 
         await refreshProjectList();
     } catch (e) {
@@ -102,14 +112,43 @@ function bindEvents() {
 
     // Error go back
     document.getElementById('btn-error-back').addEventListener('click', function () {
+        resetInstallBtn();
         showScreen('screen-home');
     });
 
-    // Cancel install
-    document.getElementById('btn-cancel-install').addEventListener('click', cancelInstall);
+    // Cancel install — show confirmation if mid-install
+    document.getElementById('btn-cancel-install').addEventListener('click', function () {
+        if (isInstalling) {
+            showConfirm(
+                'Cancel Installation?',
+                'Are you sure you want to cancel? Partial files may remain on disk.',
+                '⚠️',
+                function () { pyApi().cancel_install(); }
+            );
+        } else {
+            pyApi().cancel_install();
+        }
+    });
 
     // Terminal toggle
     document.getElementById('btn-toggle-terminal').addEventListener('click', toggleTerminal);
+
+    // Scroll to bottom button
+    document.getElementById('btn-scroll-bottom').addEventListener('click', function () {
+        pinTerminal();
+        scrollTerminalToBottom();
+    });
+
+    // Terminal scroll event — detect when user scrolls up
+    document.getElementById('terminal').addEventListener('scroll', function () {
+        var t = this;
+        var atBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 50;
+        if (atBottom) {
+            pinTerminal();
+        } else {
+            unpinTerminal();
+        }
+    });
 
     // Copy log
     document.getElementById('btn-copy-log').addEventListener('click', copyLog);
@@ -129,10 +168,10 @@ function bindEvents() {
         refreshProjectList();
         showScreen('screen-home');
     });
-    document.getElementById('done-path').addEventListener('click', function () {
-        if (currentProjectMeta && currentProjectMeta.project_id) {
-            pyApi().open_folder(currentProjectMeta.project_id);
-        }
+    var donePath = document.getElementById('done-path');
+    donePath.addEventListener('click', openCurrentProjectFolder);
+    donePath.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') openCurrentProjectFolder();
     });
 
     // Cancelled screen
@@ -160,12 +199,21 @@ function bindEvents() {
     // Search
     document.getElementById('search-input').addEventListener('input', filterProjects);
 
+    // Confirm dialog
+    document.getElementById('btn-confirm-cancel').addEventListener('click', hideConfirm);
+    document.getElementById('modal-confirm').addEventListener('click', function (e) {
+        if (e.target === this) hideConfirm();
+    });
+
     // Keyboard shortcuts
     document.addEventListener('keydown', function (e) {
-        // Escape closes modal
+        // Escape closes modals
         if (e.key === 'Escape') {
-            var modal = document.getElementById('modal-settings');
-            if (!modal.classList.contains('hidden')) {
+            var confirmModal = document.getElementById('modal-confirm');
+            var settingsModal = document.getElementById('modal-settings');
+            if (!confirmModal.classList.contains('hidden')) {
+                hideConfirm();
+            } else if (!settingsModal.classList.contains('hidden')) {
                 closeSettings();
             }
         }
@@ -201,6 +249,7 @@ function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     var btn = document.getElementById('btn-theme-toggle');
     btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+    btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
 }
 
 async function toggleTheme() {
@@ -254,6 +303,26 @@ function toggleApiWarning(show) {
     }
 }
 
+// ==================== Confirm Dialog ====================
+var _confirmCallback = null;
+
+function showConfirm(title, message, icon, onConfirm) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-icon').textContent = icon || '⚠️';
+    _confirmCallback = onConfirm;
+    document.getElementById('modal-confirm').classList.remove('hidden');
+    document.getElementById('btn-confirm-ok').onclick = function () {
+        hideConfirm();
+        if (_confirmCallback) _confirmCallback();
+    };
+}
+
+function hideConfirm() {
+    document.getElementById('modal-confirm').classList.add('hidden');
+    _confirmCallback = null;
+}
+
 // ==================== Folder Picker ====================
 async function pickFolder() {
     var folder = await pyApi().pick_folder();
@@ -291,8 +360,9 @@ function renderProjects(projects) {
         var badgeText = status === 'installed' ? '✓ Installed' :
                         status === 'partial' ? '⚠ Partial' : '✕ Failed';
         var timeAgo = p.installed_at ? formatTimeAgo(p.installed_at) : '';
+        var safeId = escapeHtml(p.id);
 
-        html += '<div class="project-card" data-id="' + escapeHtml(p.id) + '" data-searchable="' + escapeHtml((p.name + ' ' + p.owner + ' ' + (p.description || '')).toLowerCase()) + '">';
+        html += '<div class="project-card" data-id="' + safeId + '" data-searchable="' + escapeHtml((p.name + ' ' + p.owner + ' ' + (p.description || '')).toLowerCase()) + '">';
         html += '  <div class="project-info">';
         html += '    <div class="project-name-row">';
         html += '      <div class="project-name">' + escapeHtml(p.name) + '</div>';
@@ -307,10 +377,11 @@ function renderProjects(projects) {
         }
         html += '  </div>';
         html += '  <div class="project-actions">';
-        html += '    <button class="btn-launch" onclick="launchProject(\'' + escapeHtml(p.id) + '\')">Launch</button>';
-        html += '    <button class="btn-folder" onclick="openProjectFolder(\'' + escapeHtml(p.id) + '\')">Open Folder</button>';
+        html += '    <button class="btn-launch" onclick="launchProject(\'' + safeId + '\')" aria-label="Launch ' + escapeHtml(p.name) + '">Launch</button>';
+        html += '    <button class="btn-folder" onclick="openProjectFolder(\'' + safeId + '\')" aria-label="Open folder for ' + escapeHtml(p.name) + '">Open Folder</button>';
+        html += '    <button class="btn-update" onclick="updateProject(\'' + safeId + '\')" aria-label="Pull latest changes for ' + escapeHtml(p.name) + '" title="git pull latest changes">↑ Update</button>';
         html += '  </div>';
-        html += '  <button class="btn-remove" onclick="removeProject(\'' + escapeHtml(p.id) + '\')" title="Remove">✕</button>';
+        html += '  <button class="btn-remove" onclick="uninstallProject(\'' + safeId + '\')" title="Uninstall" aria-label="Uninstall ' + escapeHtml(p.name) + '">✕</button>';
         html += '</div>';
     }
     container.innerHTML = html;
@@ -337,10 +408,62 @@ function openProjectFolder(projectId) {
     pyApi().open_folder(projectId);
 }
 
-async function removeProject(projectId) {
-    if (!confirm('Remove this project from the list? (Files will not be deleted)')) return;
-    await pyApi().remove_project(projectId);
-    await refreshProjectList();
+function openCurrentProjectFolder() {
+    if (currentProjectMeta && currentProjectMeta.project_id) {
+        pyApi().open_folder(currentProjectMeta.project_id);
+    }
+}
+
+function uninstallProject(projectId) {
+    showConfirm(
+        'Uninstall Project',
+        'Delete files from disk too? Click Confirm to delete all files, or Cancel to only remove from list.',
+        '🗑️',
+        async function () {
+            var result = await pyApi().uninstall_project(projectId, true);
+            if (!result || !result.success) {
+                alert('Uninstall failed: ' + (result && result.error ? result.error : 'Unknown error'));
+            }
+            await refreshProjectList();
+        }
+    );
+    // Also wire a secondary "remove from list only" path via the cancel btn
+    document.getElementById('btn-confirm-cancel').onclick = async function () {
+        hideConfirm();
+        await pyApi().uninstall_project(projectId, false);
+        await refreshProjectList();
+        // Re‑bind cancel for next use
+        document.getElementById('btn-confirm-cancel').onclick = hideConfirm;
+    };
+}
+
+function updateProject(projectId) {
+    showConfirm(
+        'Update Project',
+        'Run git pull to get the latest changes?',
+        '↑',
+        function () {
+            pyApi().update_project(projectId);
+        }
+    );
+}
+
+// ==================== Install Button State ====================
+function setInstallBtnLoading(loading) {
+    var btn = document.getElementById('btn-install');
+    if (loading) {
+        btn.disabled = true;
+        btn.textContent = 'Analyzing…';
+        btn.classList.add('btn-loading');
+    } else {
+        btn.disabled = false;
+        btn.textContent = 'Install';
+        btn.classList.remove('btn-loading');
+    }
+}
+
+function resetInstallBtn() {
+    setInstallBtnLoading(false);
 }
 
 // ==================== Analyze Flow (Stage 1) ====================
@@ -377,6 +500,7 @@ async function startAnalyze() {
     currentRepoUrl = url;
 
     resetInstallUI();
+    setInstallBtnLoading(true);
 
     document.getElementById('analyzing-repo-name').textContent = validation.owner + '/' + validation.repo;
     document.getElementById('installing-repo-name').textContent = validation.repo;
@@ -393,6 +517,7 @@ function resetInstallUI() {
     document.getElementById('terminal').innerHTML = '';
     document.getElementById('step-list').innerHTML = '';
     document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('progress-bar').closest('.progress-bar-wrapper').setAttribute('aria-valuenow', '0');
     document.getElementById('install-error-banner').className = 'install-error-banner';
     document.getElementById('done-notes').classList.add('hidden');
     document.getElementById('plan-cache-status').classList.add('hidden');
@@ -407,10 +532,13 @@ function resetInstallUI() {
     failedStepId = null;
     currentInstallPlan = null;
     currentProjectMeta = null;
+    isInstalling = false;
+    pinTerminal();
 }
 
 function resetState() {
     resetInstallUI();
+    resetInstallBtn();
     document.getElementById('repo-url').value = '';
     document.getElementById('url-error').textContent = '';
 }
@@ -493,6 +621,21 @@ async function cancelInstall() {
 }
 
 // ==================== Terminal ====================
+function pinTerminal() {
+    terminalPinned = true;
+    document.getElementById('btn-scroll-bottom').classList.add('hidden');
+}
+
+function unpinTerminal() {
+    terminalPinned = false;
+    document.getElementById('btn-scroll-bottom').classList.remove('hidden');
+}
+
+function scrollTerminalToBottom() {
+    var terminal = document.getElementById('terminal');
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
 function toggleTerminal() {
     var wrapper = document.querySelector('.terminal-wrapper');
     terminalCollapsed = !terminalCollapsed;
@@ -518,7 +661,6 @@ function copyLog() {
 // ==================== Retry / Skip ====================
 function retryStep() {
     if (failedStepId === null) return;
-    // Clear error banner
     document.getElementById('install-error-banner').className = 'install-error-banner';
     var installPath = document.getElementById('install-path').textContent;
     pyApi().retry_from_step(failedStepId, installPath);
@@ -572,6 +714,16 @@ window.onInstallEvent = function (eventJson) {
         case 'webui_done':
             handleWebuiDone(event);
             break;
+        case 'update_start':
+            handleUpdateStart(event);
+            break;
+        case 'update_output':
+            // Could be shown in a dedicated modal, for now just log
+            console.log('[update]', event.line);
+            break;
+        case 'update_done':
+            handleUpdateDone(event);
+            break;
     }
 };
 
@@ -586,15 +738,22 @@ function handleStageEvent(event) {
                 'Reading documentation with AI...';
             break;
         case 'installing':
+            isInstalling = true;
+            resetInstallBtn();
             showScreen('screen-installing', 'left');
             break;
         case 'done':
+            isInstalling = false;
             showScreen('screen-done', 'left');
             break;
         case 'cancelled':
+            isInstalling = false;
+            resetInstallBtn();
             showScreen('screen-cancelled');
             break;
         case 'error':
+            isInstalling = false;
+            resetInstallBtn();
             handleErrorStage(event.message || 'An unknown error occurred.');
             break;
     }
@@ -602,6 +761,7 @@ function handleStageEvent(event) {
 
 function handlePlanReview(event) {
     currentInstallPlan = event.plan;
+    resetInstallBtn();
     showPlanReview(event);
 }
 
@@ -673,7 +833,11 @@ function handleOutput(event) {
 
     line.textContent = text;
     terminal.appendChild(line);
-    terminal.scrollTop = terminal.scrollHeight;
+
+    // Only auto-scroll if pinned
+    if (terminalPinned) {
+        terminal.scrollTop = terminal.scrollHeight;
+    }
 }
 
 function handleStepDone(event) {
@@ -713,6 +877,7 @@ function handleStepError(event) {
         line.className = 'terminal-line error';
         line.textContent = 'ERROR: ' + event.error;
         terminal.appendChild(line);
+        // Always scroll on errors so user sees them
         terminal.scrollTop = terminal.scrollHeight;
     }
 
@@ -755,12 +920,51 @@ function handleWebuiDone(event) {
     }
 }
 
+function handleUpdateStart(event) {
+    console.log('Updating project:', event.project_id);
+}
+
+function handleUpdateDone(event) {
+    if (event.success) {
+        showToast('✓ Updated ' + event.project_id + ' successfully');
+    } else {
+        showToast('✕ Update failed: ' + (event.error || 'Unknown error'), true);
+    }
+    refreshProjectList();
+}
+
+// ==================== Toast Notification ====================
+function showToast(message, isError) {
+    var existing = document.getElementById('gi-toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.id = 'gi-toast';
+    toast.className = 'gi-toast' + (isError ? ' gi-toast-error' : '');
+    toast.textContent = message;
+    toast.setAttribute('role', 'status');
+    document.body.appendChild(toast);
+
+    // Trigger animation then remove
+    requestAnimationFrame(function () {
+        toast.classList.add('gi-toast-visible');
+    });
+    setTimeout(function () {
+        toast.classList.remove('gi-toast-visible');
+        setTimeout(function () { toast.remove(); }, 300);
+    }, 3000);
+}
+
+// ==================== Progress Bar ====================
 function updateProgressBar() {
     if (totalSteps === 0) return;
     var pct = Math.round((stepsCompleted / totalSteps) * 100);
-    document.getElementById('progress-bar').style.width = pct + '%';
+    var bar = document.getElementById('progress-bar');
+    bar.style.width = pct + '%';
+    bar.closest('.progress-bar-wrapper').setAttribute('aria-valuenow', String(pct));
 }
 
+// ==================== Helpers ====================
 function formatAbsoluteDate(isoString) {
     try {
         var date = new Date(isoString);
@@ -770,7 +974,6 @@ function formatAbsoluteDate(isoString) {
     }
 }
 
-// ==================== Helpers ====================
 function escapeHtml(str) {
     if (!str) return '';
     var div = document.createElement('div');

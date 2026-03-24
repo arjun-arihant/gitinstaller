@@ -11,6 +11,7 @@ Modules:
     webui_gen       — Gradio WebUI generation
     project_manager — Persistent state management
     utils           — Shared utility functions
+    version         — Application version string
 """
 
 from . import (
@@ -23,6 +24,7 @@ from . import (
     platform_utils,
     project_manager,
     utils,
+    version,
     webui_gen,
 )
 
@@ -37,4 +39,5 @@ __all__ = [
     "project_manager",
     "utils",
     "models",
+    "version",
 ]

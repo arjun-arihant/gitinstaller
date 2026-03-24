@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import base64
 import logging
-import re
 
 import requests
 
 from core.models import RepoData
+from core.utils import parse_github_url
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,7 @@ EXTRA_FILES = [
 def _parse_repo_url(repo_url: str) -> tuple[str, str]:
     """Extract ``(owner, repo)`` from a GitHub URL or shorthand.
 
-    Accepts:
-    - ``owner/repo``
-    - ``https://github.com/owner/repo``
-    - ``https://github.com/owner/repo.git``
+    Delegates to the consolidated ``parse_github_url`` utility.
 
     Args:
         repo_url: The raw URL or shorthand string.
@@ -73,22 +70,10 @@ def _parse_repo_url(repo_url: str) -> tuple[str, str]:
     Raises:
         ValueError: If the URL cannot be parsed.
     """
-    repo_url = repo_url.strip().rstrip("/")
-
-    # Handle shorthand "owner/repo"
-    shorthand = re.match(r"^([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$", repo_url)
-    if shorthand:
-        return shorthand.group(1), shorthand.group(2)
-
-    patterns = [
-        r"(?:https?://)?github\.com/([^/]+)/([^/.]+?)(?:\.git)?(?:/.*)?$",
-    ]
-    for pattern in patterns:
-        match = re.match(pattern, repo_url)
-        if match:
-            return match.group(1), match.group(2)
-
-    raise ValueError(f"Could not parse GitHub URL: {repo_url}")
+    valid, owner, repo = parse_github_url(repo_url)
+    if not valid:
+        raise ValueError(f"Could not parse GitHub URL: {repo_url}")
+    return owner, repo
 
 
 def _build_headers(github_token: str | None = None) -> dict[str, str]:
