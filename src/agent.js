@@ -1,7 +1,7 @@
 import { callLLM } from "./llm.js";
 import { TOOL_DEFINITIONS, executeTool } from "./tools.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { log } from "./logger.js";
+import { log, stopSpinner } from "./logger.js";
 import chalk from "chalk";
 
 const MAX_TOOL_CALLS = 40;
@@ -17,6 +17,10 @@ export async function runAgent(projectDir, repoUrl, repoMeta, pythonInfo) {
       content: `Install this repository: ${repoUrl}\nThe code has been downloaded to: ${projectDir}\nAnalyze the project and install all dependencies so it can be run.`,
     },
   ];
+
+  // Stop the spinner before the agent loop — per-line tool output conflicts
+  // with ora's ANSI cursor rewrites, causing previous lines to disappear.
+  stopSpinner();
 
   let toolCallCount = 0;
   let finished = false;
