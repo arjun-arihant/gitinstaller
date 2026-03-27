@@ -22,19 +22,14 @@ const BLOCKED_COMMANDS = new Set([
 ]);
 
 const BLOCKED_ARG_PATTERNS = [
-  /\|\s*bash/i,
-  /\|\s*sh/i,
-  /\|\s*zsh/i,
-  /\|\s*cmd/i,
-  /curl\s.*\|/i,
-  /wget\s.*\|/i,
-  />\s*\/dev\//,
-  /--no-preserve-root/,
+  /\|/,               // pipe — covers all | variants; interpreted by shell on Windows
+  />\s*\/dev\//,      // /dev/ redirection
+  />\s*[A-Za-z]:\\/,  // Windows drive redirection (e.g. > C:\file)
   /&&/,
-  /\|\|/,
   /;/,
   /`/,
   /\$\(/,
+  /--no-preserve-root/,
 ];
 
 export function validatePath(requestedPath, projectDir) {

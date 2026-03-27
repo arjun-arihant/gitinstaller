@@ -23,7 +23,7 @@ The LLM decides what to do. The tool just executes. It handles Python projects (
 ### Windows (no prerequisites required)
 
 ```bat
-git clone https://github.com/your-username/gitinstaller
+git clone https://github.com/arjun-arihant/gitinstaller.git
 cd gitinstaller
 setup.bat
 ```
@@ -43,7 +43,7 @@ gitinstaller.bat install https://github.com/owner/repo
 ### Linux / macOS (no prerequisites required)
 
 ```bash
-git clone https://github.com/your-username/gitinstaller
+git clone https://github.com/arjun-arihant/gitinstaller.git
 cd gitinstaller
 chmod +x setup.sh gitinstaller.sh
 ./setup.sh
