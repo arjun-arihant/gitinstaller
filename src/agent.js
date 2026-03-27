@@ -4,7 +4,7 @@ import { buildSystemPrompt } from "./prompt.js";
 import { log } from "./logger.js";
 import chalk from "chalk";
 
-const MAX_TOOL_CALLS = 20;
+const MAX_TOOL_CALLS = 40;
 const MAX_TEXT_ONLY_RESPONSES = 3;
 
 export async function runAgent(projectDir, repoUrl, repoMeta, pythonInfo) {
@@ -78,7 +78,7 @@ export async function runAgent(projectDir, repoUrl, repoMeta, pythonInfo) {
           role: "tool",
           tool_call_id: toolCall.id,
           content:
-            "MAX TOOL CALLS REACHED (20). You must call finish() now or installation will be terminated.",
+            "MAX TOOL CALLS REACHED (40). You must call finish() now or installation will be terminated.",
         });
         break;
       }
@@ -115,7 +115,7 @@ export async function runAgent(projectDir, repoUrl, repoMeta, pythonInfo) {
 
   // If we hit the tool call limit without finishing
   if (!finished && toolCallCount >= MAX_TOOL_CALLS) {
-    log(chalk.yellow("Reached maximum tool call limit (20)."));
+    log(chalk.yellow("Reached maximum tool call limit (40)."));
     // Give the LLM one last chance to call finish
     messages.push({
       role: "user",

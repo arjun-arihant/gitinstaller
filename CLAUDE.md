@@ -29,14 +29,14 @@ There are no build steps, no tests, and no lint configuration.
 
 ## Architecture
 
-The agentic loop is the core concept: `index.js` bootstraps → downloads the ZIP → ensures Python exists → hands off to `agent.js`, which calls the LLM in a loop until `finish()` is called or the 20-call hard cap is hit.
+The agentic loop is the core concept: `index.js` bootstraps → downloads the ZIP → ensures Python exists → hands off to `agent.js`, which calls the LLM in a loop until `finish()` is called or the 40-call hard cap is hit.
 
 ```
 index.js          CLI entry, .env loading, orchestration
 src/agent.js      Agentic loop — calls LLM, dispatches tools, manages message history
 src/llm.js        OpenRouter API client (model: xiaomi/mimo-v2-flash, temp 0.2)
 src/tools.js      6 tool implementations + OpenAI function-calling schemas
-src/prompt.js     System prompt template (prescriptive install workflow for a small model)
+src/prompt.js     System prompt template (prescriptive install workflow for a small model, includes hardware detection + WebUI generation)
 src/github.js     ZIP download + extraction (strips the {repo}-{branch}/ wrapper)
 src/python.js     python-build-standalone download, caching, venv helpers
 src/security.js   Path sandboxing (validatePath) + command blocklist (validateCommand)
@@ -61,10 +61,18 @@ GNU tar on Windows interprets `D:` as a remote host. `python.js` uses `--force-l
 
 `validatePath` ensures all file operations resolve inside the project directory. `validateCommand` blocks a hardcoded list of destructive commands and shell injection patterns. `run_command` always uses `spawn` with `shell: false`.
 
+## Agent behaviour
+
+### Hardware-aware installation
+The prompt instructs the LLM to run `nvidia-smi` / `rocm-smi` before installing ML dependencies. Based on the result it picks the GPU or CPU requirements variant (separate files like `requirements-gpu.txt`, CUDA index URLs, `package[cuda]` extras, etc.).
+
+### WebUI generation
+After installation the LLM checks whether the project already has a UI (Gradio, Streamlit, React, etc.). If not, and if the project exposes callable functionality, it installs Gradio and writes a minimal `webui.py` to the project root. The file uses `demo.launch()` with no port overrides. Node.js and pure-library projects are excluded from WebUI generation.
+
 ## Key constraints
 
 - **Dependencies:** `adm-zip`, `chalk`, `ora` only. No new runtime deps.
 - **ESM only:** `"type": "module"` in package.json — use `import`/`export` everywhere.
 - **No system Python:** always use the bundled Python from `ensurePython()` or the venv python from `getVenvPython()`.
-- **Tool call cap:** 20 per install session, enforced in `agent.js`.
+- **Tool call cap:** 40 per install session, enforced in `agent.js`.
 - **Command timeout:** 5 minutes per `run_command`, via `AbortController`.
