@@ -198,9 +198,15 @@ function runCommandTool(args, projectDir) {
     let stdout = "";
     let stderr = "";
 
+    // On Windows, npm/npx/yarn are .cmd batch scripts and require a shell to
+    // execute. We use shell:true on Windows only. validateCommand() already
+    // blocks dangerous commands (cmd, powershell, bash, etc.) and injection
+    // patterns (&&, ||, ;, backticks, $(...)), so this is safe.
+    const useShell = process.platform === "win32";
+
     const proc = spawn(args.command, args.args || [], {
       cwd: projectDir,
-      shell: false,
+      shell: useShell,
       signal: ac.signal,
       env: { ...process.env, PATH: process.env.PATH },
     });

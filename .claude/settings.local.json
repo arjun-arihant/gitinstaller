@@ -12,7 +12,8 @@
       "Bash(node index.js install https://notgithub.com/foo/bar)",
       "Bash(node index.js install https://github.com/KittenML/KittenTTS)",
       "Bash(curl -s \"https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest\")",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(grep -E '\\\\.\\(js|json|md|env\\)$|^\\\\.')"
     ]
   }
 }

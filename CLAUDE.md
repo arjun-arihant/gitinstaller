@@ -12,16 +12,35 @@ node index.js install https://github.com/user/repo
 
 ## Setup
 
+**Fresh PC (no Node.js installed):**
+```bash
+# Windows
+setup.bat
+
+# Linux/macOS
+chmod +x setup.sh gitinstaller.sh && ./setup.sh
+```
+
+**Already have Node.js:**
 ```bash
 npm install
 cp .env.example .env   # then fill in OPENROUTER_API_KEY
 ```
 
-Python is managed automatically — no system Python required. It is downloaded via `python-build-standalone` on first run and cached in `.gitinstaller/python/`.
+Node.js and Python are both managed automatically — no prerequisites needed.
+- Node.js is downloaded via `setup.bat`/`setup.sh` and cached in `.gitinstaller/node/`.
+- Python is downloaded via `python-build-standalone` on first run and cached in `.gitinstaller/python/`.
 
 ## Running
 
 ```bash
+# Windows (works whether Node.js is system-installed or portable)
+gitinstaller.bat install https://github.com/owner/repo
+
+# Linux/macOS
+./gitinstaller.sh install https://github.com/owner/repo
+
+# Or directly if Node.js is already on PATH
 node index.js install https://github.com/owner/repo
 ```
 
@@ -53,13 +72,13 @@ Tools never throw — they return strings. `run_command` returns `EXIT CODE: N\n
 
 `finish()` returns a JSON sentinel `{ __finish: true, summary, success }` which `agent.js` detects to exit the loop.
 
-### Windows-specific: tar paths
+### tar extraction
 
-GNU tar on Windows interprets `D:` as a remote host. `python.js` uses `--force-local` and forward-slash paths when extracting the Python `.tar.gz`. Don't remove this.
+`python.js` uses a pure-JS tar extractor (`extractTarGz`) based on Node.js built-in `zlib` and manual 512-byte POSIX header parsing. No system `tar` binary is required on any platform. Do not replace this with `spawn("tar", ...)`.
 
 ### Security boundaries
 
-`validatePath` ensures all file operations resolve inside the project directory. `validateCommand` blocks a hardcoded list of destructive commands and shell injection patterns. `run_command` always uses `spawn` with `shell: false`.
+`validatePath` ensures all file operations resolve inside the project directory. `validateCommand` blocks a hardcoded list of destructive commands and shell injection patterns. `run_command` uses `spawn` with `shell: false` on Linux/macOS and `shell: true` on Windows (required for `.cmd` scripts like `npm`, `npx`). The command and arg blocklists in `security.js` guard against injection when `shell: true` is active.
 
 ## Agent behaviour
 

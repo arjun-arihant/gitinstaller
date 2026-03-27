@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { spawn } from "child_process";
 import { log } from "./logger.js";
 import chalk from "chalk";
 
@@ -79,21 +78,15 @@ export async function ensurePython(baseDir) {
   const buffer = Buffer.from(await dlResp.arrayBuffer());
   const tarPath = join(pythonDir, "python.tar.gz");
 
-  const { writeFileSync } = await import("fs");
+  const { writeFileSync, unlinkSync } = await import("fs");
   writeFileSync(tarPath, buffer);
 
-  // Extract with tar (available on Win10+, Linux, macOS)
+  // Extract using pure Node.js (zlib decompression + tar header parsing).
+  // This works on every platform without relying on a system tar binary.
   log(chalk.gray("  Extracting Python..."));
-  // On Windows, use forward slashes and --force-local to prevent
-  // GNU tar from interpreting drive letters (D:) as remote hosts
-  const tarFile = tarPath.replace(/\\/g, "/");
-  const outDir = pythonDir.replace(/\\/g, "/");
-  const tarArgs = ["xzf", tarFile, "-C", outDir];
-  if (process.platform === "win32") tarArgs.push("--force-local");
-  await runSpawn("tar", tarArgs);
+  await extractTarGz(tarPath, pythonDir);
 
   // Clean up the archive
-  const { unlinkSync } = await import("fs");
   try {
     unlinkSync(tarPath);
   } catch {
@@ -124,15 +117,98 @@ export function getVenvPip(projectDir) {
   return join(projectDir, "venv", "bin", "pip3");
 }
 
-function runSpawn(cmd, args, cwd) {
+/**
+ * Pure-JS .tar.gz extractor using Node.js built-in zlib.
+ * Handles regular files, directories, and symlinks.
+ * No system tar binary required.
+ */
+async function extractTarGz(tarGzPath, destDir) {
+  const { createGunzip } = await import("zlib");
+  const { createReadStream, createWriteStream, chmodSync } = await import("fs");
+  const { mkdir, symlink } = await import("fs/promises");
+  const { join, dirname } = await import("path");
+
+  const BLOCK = 512;
+
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { cwd, shell: false });
-    let stderr = "";
-    proc.stderr.on("data", (d) => (stderr += d.toString()));
-    proc.on("close", (code) => {
-      if (code !== 0) reject(new Error(`${cmd} exited with code ${code}: ${stderr}`));
-      else resolve();
+    const gunzip = createGunzip();
+    const src = createReadStream(tarGzPath);
+    src.pipe(gunzip);
+
+    const chunks = [];
+    gunzip.on("data", (chunk) => chunks.push(chunk));
+    gunzip.on("error", reject);
+    gunzip.on("end", async () => {
+      try {
+        const buf = Buffer.concat(chunks);
+        let offset = 0;
+
+        while (offset + BLOCK <= buf.length) {
+          // Check for end-of-archive (two zero blocks)
+          let allZero = true;
+          for (let i = 0; i < BLOCK; i++) {
+            if (buf[offset + i] !== 0) { allZero = false; break; }
+          }
+          if (allZero) break;
+
+          // Parse POSIX / ustar header
+          const name = readStr(buf, offset, 100);
+          const modeOctal = readStr(buf, offset + 100, 8);
+          const sizeOctal = readStr(buf, offset + 124, 12);
+          const typeflag = String.fromCharCode(buf[offset + 156]);
+          const linkname = readStr(buf, offset + 157, 100);
+
+          // ustar prefix field (bytes 345-499)
+          const prefix = readStr(buf, offset + 345, 155);
+          const fullName = prefix ? prefix + "/" + name : name;
+
+          const fileSize = parseInt(sizeOctal.trim(), 8) || 0;
+          const mode = parseInt(modeOctal.trim(), 8) || 0o644;
+
+          offset += BLOCK; // advance past header
+
+          const destPath = join(destDir, fullName);
+
+          if (typeflag === "5" || fullName.endsWith("/")) {
+            // Directory
+            await mkdir(destPath, { recursive: true });
+          } else if (typeflag === "2") {
+            // Symlink
+            await mkdir(dirname(destPath), { recursive: true });
+            try { await symlink(linkname, destPath); } catch { /* ignore duplicate */ }
+          } else {
+            // Regular file (typeflag "0", "\0", or empty)
+            await mkdir(dirname(destPath), { recursive: true });
+            const data = buf.slice(offset, offset + fileSize);
+            await new Promise((res, rej) => {
+              const ws = createWriteStream(destPath, { mode });
+              ws.write(data);
+              ws.end();
+              ws.on("finish", res);
+              ws.on("error", rej);
+            });
+            // Preserve executable bits
+            if (mode & 0o111) {
+              try { chmodSync(destPath, mode); } catch { /* ignore */ }
+            }
+          }
+
+          // Advance offset by file data, rounded up to 512-byte blocks
+          const dataBlocks = Math.ceil(fileSize / BLOCK);
+          offset += dataBlocks * BLOCK;
+        }
+
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
     });
-    proc.on("error", reject);
+    src.on("error", reject);
   });
+}
+
+function readStr(buf, offset, length) {
+  let end = offset;
+  while (end < offset + length && buf[end] !== 0) end++;
+  return buf.slice(offset, end).toString("utf8");
 }

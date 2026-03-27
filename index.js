@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, mkdirSync, existsSync } from "fs";
-import { resolve, dirname } from "path";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import chalk from "chalk";
 import ora from "ora";
@@ -11,6 +11,19 @@ import { runAgent } from "./src/agent.js";
 import { setSpinner, log } from "./src/logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// If a portable Node.js exists in .gitinstaller/node/, prepend it to PATH so
+// that all child processes (npm, npx, node) spawned by the LLM agent find it.
+function setupPortableNodePath() {
+  const nodeDir = join(__dirname, ".gitinstaller", "node");
+  if (!existsSync(nodeDir)) return;
+  const binDir =
+    process.platform === "win32" ? nodeDir : join(nodeDir, "bin");
+  const sep = process.platform === "win32" ? ";" : ":";
+  if (!process.env.PATH.includes(binDir)) {
+    process.env.PATH = binDir + sep + process.env.PATH;
+  }
+}
 
 // Load .env manually (no dotenv dependency)
 function loadEnv() {
@@ -39,6 +52,7 @@ function parseGitHubUrl(url) {
 }
 
 async function main() {
+  setupPortableNodePath();
   loadEnv();
 
   const args = process.argv.slice(2);
