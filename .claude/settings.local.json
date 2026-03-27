@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /d/repos/gitinstaller -type f -not -path */.git/*)",
+      "Bash(git config:*)",
+      "Bash(git -C d:/repos/gitinstaller log --oneline --all -20)",
+      "Bash(git -C d:/repos/gitinstaller show --stat f8f8b19)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(npm install:*)",
+      "Bash(node index.js)",
+      "Bash(node index.js install https://notgithub.com/foo/bar)",
+      "Bash(node index.js install https://github.com/KittenML/KittenTTS)",
+      "Bash(curl -s \"https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest\")",
+      "Bash(node -e \":*)"
+    ]
+  }
+}

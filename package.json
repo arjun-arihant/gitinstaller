@@ -1,0 +1,18 @@
+{
+  "name": "gitinstaller",
+  "version": "1.0.0",
+  "description": "CLI tool that autonomously installs GitHub repos using an LLM-powered agentic loop",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "gitinstaller": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "chalk": "^5.4.1",
+    "ora": "^8.1.1"
+  }
+}
