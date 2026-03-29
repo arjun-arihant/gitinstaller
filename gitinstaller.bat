@@ -28,5 +28,5 @@ echo.
 exit /b 1
 
 :run
-"%NODE%" "%BASE_DIR%index.js" %*
+"%NODE%" "%BASE_DIR%\index.js" %*
 endlocal
