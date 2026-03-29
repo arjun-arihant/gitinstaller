@@ -7,7 +7,8 @@ echo ============================================
 echo.
 
 set "BASE_DIR=%~dp0"
-set "GI_DIR=%BASE_DIR%.gitinstaller"
+if "%BASE_DIR:~-1%"=="\" set "BASE_DIR=%BASE_DIR:~0,-1%"
+set "GI_DIR=%BASE_DIR%\.gitinstaller"
 set "NODE_DIR=%GI_DIR%\node"
 set "NODE_EXE=%NODE_DIR%\node.exe"
 set "NODE_VERSION=22.14.0"

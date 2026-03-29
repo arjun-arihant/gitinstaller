@@ -2,7 +2,8 @@
 setlocal
 
 set "BASE_DIR=%~dp0"
-set "NODE_DIR=%BASE_DIR%.gitinstaller\node"
+if "%BASE_DIR:~-1%"=="\" set "BASE_DIR=%BASE_DIR:~0,-1%"
+set "NODE_DIR=%BASE_DIR%\.gitinstaller\node"
 set "NODE_EXE=%NODE_DIR%\node.exe"
 
 rem -------- Locate Node.js --------
