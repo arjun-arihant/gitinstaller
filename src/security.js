@@ -53,7 +53,13 @@ export function validateCommand(command, args) {
   // Reject commands with path separators (prevents running arbitrary binaries)
   if (command.includes("/") || command.includes("\\")) {
     // Allow venv python paths (e.g., venv/Scripts/python.exe)
-    if (!command.includes("venv")) {
+    // Allow conda_env python paths (e.g., ./conda_env/python.exe, ./conda_env/bin/python)
+    // Allow .gitinstaller conda paths (e.g., .gitinstaller/conda/condabin/conda.bat)
+    const allowedPathCommands =
+      command.includes("venv") ||
+      command.includes("conda_env") ||
+      command.includes(".gitinstaller");
+    if (!allowedPathCommands) {
       throw new Error(
         `Command must not contain path separators: "${command}"`
       );

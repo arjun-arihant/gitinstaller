@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import chalk from "chalk";
 import ora from "ora";
 import { downloadRepo } from "./src/github.js";
-import { ensurePython, getVenvPython } from "./src/python.js";
+import { ensurePython, getVenvPython, ensureConda } from "./src/python.js";
 import { runAgent } from "./src/agent.js";
 import { setSpinner, log } from "./src/logger.js";
 
@@ -49,6 +49,40 @@ function parseGitHubUrl(url) {
   );
   if (!match) return null;
   return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
+}
+
+// Scan README / installation docs for conda install commands.
+// Returns true if the project REQUIRES conda (not just suggests it for env creation).
+// We look for "conda install" or "mamba install" which indicate conda-only packages.
+// We ignore "conda create" / "conda activate" since those are just env management
+// and can be replaced with venv + pip.
+function detectCondaNeeds(projectDir) {
+  const readmeNames = [
+    "README.md", "README.rst", "README.txt", "README",
+    "INSTALL.md", "INSTALL.rst", "INSTALLATION.md",
+  ];
+
+  for (const name of readmeNames) {
+    const path = join(projectDir, name);
+    if (!existsSync(path)) continue;
+
+    try {
+      const content = readFileSync(path, "utf-8").toLowerCase();
+
+      // Look for conda/mamba install in command lines
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // Match lines that start with (possibly after $) conda install or mamba install
+        if (/^(?:\$\s*)?conda\s+install\b/.test(trimmed)) return true;
+        if (/^(?:\$\s*)?mamba\s+install\b/.test(trimmed)) return true;
+      }
+    } catch {
+      // unreadable file, skip
+    }
+  }
+
+  return false;
 }
 
 async function main() {
@@ -98,11 +132,27 @@ async function main() {
     const venvPython = getVenvPython(installDir);
     log(chalk.green("\u2713 Python ready"));
 
+    // Step 2b: Detect conda needs via environment.yml or README scan
+    const hasCondaEnvFile =
+      existsSync(join(installDir, "environment.yml")) ||
+      existsSync(join(installDir, "environment.yaml"));
+    const needsConda = hasCondaEnvFile || detectCondaNeeds(installDir);
+    let condaBin = null;
+    if (needsConda) {
+      spinner.text = hasCondaEnvFile
+        ? "Conda environment file detected, setting up Miniforge..."
+        : "Conda installation detected in README, setting up Miniforge...";
+      condaBin = await ensureConda(__dirname);
+      log(chalk.green("\u2713 Conda ready"));
+    }
+
     // Step 3: Run the agentic installer
     spinner.text = "LLM agent is analyzing the project...";
     const result = await runAgent(installDir, url, repoMeta, {
       pythonBin,
       venvPython,
+      condaBin,
+      hasCondaEnv: needsConda,
     });
 
     spinner.stop();

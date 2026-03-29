@@ -4,6 +4,7 @@ import { log } from "./logger.js";
 import chalk from "chalk";
 
 const PYTHON_VERSION = "3.12";
+const MINIFORGE_VERSION = "24.11.3-0";
 
 // Platform triples for python-build-standalone
 function getPlatformTriple() {
@@ -115,6 +116,126 @@ export function getVenvPip(projectDir) {
     return join(projectDir, "venv", "Scripts", "pip.exe");
   }
   return join(projectDir, "venv", "bin", "pip3");
+}
+
+// --- Conda (Miniforge) support ---
+
+function getMiniforgeAssetName() {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === "win32" && arch === "x64") return "Miniforge3-Windows-x86_64.exe";
+  if (platform === "linux" && arch === "x64") return "Miniforge3-Linux-x86_64.sh";
+  if (platform === "linux" && arch === "arm64") return "Miniforge3-Linux-aarch64.sh";
+  if (platform === "darwin" && arch === "arm64") return "Miniforge3-MacOSX-arm64.sh";
+  if (platform === "darwin" && arch === "x64") return "Miniforge3-MacOSX-x86_64.sh";
+
+  throw new Error(`Unsupported platform for Miniforge: ${platform}-${arch}`);
+}
+
+function getCondaBinPath(condaDir) {
+  if (process.platform === "win32") {
+    return join(condaDir, "condabin", "conda.bat");
+  }
+  return join(condaDir, "condabin", "conda");
+}
+
+export function getCondaActivatePath(condaDir) {
+  if (process.platform === "win32") {
+    return join(condaDir, "Scripts", "activate.bat");
+  }
+  return join(condaDir, "etc", "profile.d", "conda.sh");
+}
+
+export async function ensureConda(baseDir) {
+  const condaDir = join(baseDir, ".gitinstaller", "conda");
+  const condaBin = getCondaBinPath(condaDir);
+
+  if (existsSync(condaBin)) {
+    return condaBin;
+  }
+
+  log(chalk.yellow("Downloading Miniforge (conda)..."));
+  mkdirSync(condaDir, { recursive: true });
+
+  const assetName = getMiniforgeAssetName();
+  const downloadUrl = `https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/${assetName}`;
+
+  log(chalk.gray(`  Downloading ${assetName}...`));
+
+  const dlResp = await fetch(downloadUrl);
+  if (!dlResp.ok) {
+    throw new Error(`Failed to download Miniforge: HTTP ${dlResp.status}`);
+  }
+
+  const buffer = Buffer.from(await dlResp.arrayBuffer());
+  const { writeFileSync } = await import("fs");
+  const installerPath = join(condaDir, assetName);
+  writeFileSync(installerPath, buffer);
+
+  log(chalk.gray("  Installing Miniforge..."));
+
+  const { spawn } = await import("child_process");
+
+  if (process.platform === "win32") {
+    // Silent install on Windows using the .exe installer
+    await runInstallerProcess(spawn, installerPath, [
+      "/InstallationType=JustMe",
+      "/AddToPath=0",
+      "/RegisterPython=0",
+      "/NoRegistry=1",
+      "/NoScripts=1",
+      "/S",
+      `/D=${condaDir}`,
+    ]);
+  } else {
+    // Silent install on Linux/macOS using the .sh installer
+    const { chmodSync } = await import("fs");
+    chmodSync(installerPath, 0o755);
+    await runInstallerProcess(spawn, "/bin/bash", [
+      installerPath,
+      "-b",     // batch mode (no prompts)
+      "-u",     // update existing install if present
+      "-p", condaDir,
+    ]);
+  }
+
+  // Clean up installer
+  try {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(installerPath);
+  } catch {
+    // ignore cleanup failure
+  }
+
+  if (!existsSync(condaBin)) {
+    throw new Error(
+      `Miniforge installation succeeded but conda binary not found at ${condaBin}`
+    );
+  }
+
+  log(chalk.green("  Miniforge (conda) downloaded and ready."));
+  return condaBin;
+}
+
+function runInstallerProcess(spawn, command, args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    });
+
+    let stderr = "";
+    proc.stderr.on("data", (data) => { stderr += data.toString(); });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Miniforge installer exited with code ${code}: ${stderr}`));
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 /**
